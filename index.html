@@ -1124,28 +1124,48 @@ async function startLive() {
     live.ws = new WebSocket(url);
 
     live.ws.onopen = () => {
-      // 3) 셋업 메시지 전송
-      live.ws.send(JSON.stringify({
+      console.log('[Live] WS opened, sending setup with model:', LIVE_MODEL, 'voice:', gemini.voice || 'Aoede');
+      const setupMsg = {
         setup: {
           model: `models/${LIVE_MODEL}`,
           generationConfig: {
             responseModalities: ['AUDIO'],
             speechConfig: {
               voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: gemini.voice || 'Kore' }
+                prebuiltVoiceConfig: { voiceName: gemini.voice || 'Aoede' }
               }
             }
           },
           systemInstruction: { parts: [{ text: LIVE_SYSTEM }] }
         }
-      }));
+      };
+      live.ws.send(JSON.stringify(setupMsg));
     };
 
-    live.ws.onmessage = handleLiveMessage;
-    live.ws.onerror = () => { setStatus('⚠ Live 연결 오류'); };
+    live.ws.onmessage = (e) => {
+      // 첫 메시지가 에러일 수 있으니 원본도 로그
+      const peek = (e.data instanceof Blob) ? '[Blob]' : (typeof e.data === 'string' ? e.data.slice(0, 300) : '[binary]');
+      console.log('[Live] msg:', peek);
+      handleLiveMessage(e);
+    };
+    live.ws.onerror = (ev) => {
+      console.error('[Live] WS error event:', ev);
+      setStatus('⚠ Live 연결 오류 (콘솔 확인)');
+    };
     live.ws.onclose = (e) => {
+      console.warn('[Live] WS closed - code:', e.code, 'reason:', e.reason, 'wasClean:', e.wasClean);
+      const reasonText = e.reason ? `: ${e.reason}` : '';
+      // 진단 메시지로 일반적 close code 해설
+      const hint = ({
+        1000: '정상 종료',
+        1002: '프로토콜 오류',
+        1006: '비정상 종료 (네트워크/CORS)',
+        1007: '잘못된 데이터',
+        1008: '정책 위반 (API 키/권한)',
+        1011: '서버 내부 오류',
+      })[e.code] || '알 수 없음';
       if (live.active || live.connecting) {
-        setStatus(`📞 Live 연결 종료 (${e.code})`);
+        setStatus(`📞 Live 종료 [${e.code}] ${hint}${reasonText}`);
         stopLive(true);
       }
     };
@@ -1162,6 +1182,13 @@ async function handleLiveMessage(e) {
     const raw = (e.data instanceof Blob) ? await e.data.text() : e.data;
     data = JSON.parse(raw);
   } catch (err) {
+    return;
+  }
+
+  // 서버가 에러 객체를 보낼 수 있음 (예: 잘못된 setup, 모델 미접근)
+  if (data.error) {
+    console.error('[Live] server error:', data.error);
+    setStatus(`⚠ Live 오류: ${data.error.message || JSON.stringify(data.error)}`);
     return;
   }
 
