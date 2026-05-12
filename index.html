@@ -188,13 +188,27 @@ scene.add(makeNebula('#aa66ff', 1100, new THREE.Vector3( 400, 1300, -3000)));
 scene.add(makeNebula('#44ddff', 1000, new THREE.Vector3(-900, -900, -1800)));
 
 // ─── 라벨 ─────────────────────────────────────────────
-function makeLabel(text, color) {
+// 모든 라벨을 모아 매 프레임 스케일 업데이트 (카메라 거리에 비례 → 화면 크기 일정)
+const allLabels = [];
+const _camPosLbl = new THREE.Vector3();
+function tickLabels() {
+  camera.getWorldPosition(_camPosLbl);
+  for (const lbl of allLabels) {
+    if (!lbl.visible) continue;
+    const p = lbl.userData.sizeParams;
+    const d = _camPosLbl.distanceTo(lbl.position);
+    const s = Math.max(p.min, Math.min(d * p.factor, p.max));
+    lbl.scale.set(s * 4, s, 1); // 캔버스 4:1 종횡비 유지
+  }
+}
+
+function makeLabel(text, color, sizeParams = { factor: 0.035, min: 3, max: 200 }, fontSize = 56) {
   const canvas = document.createElement('canvas');
   canvas.width = 512; canvas.height = 128;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0,0,512,128);
-  ctx.font = 'bold 56px system-ui, sans-serif';
+  ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
   ctx.fillStyle = color;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(text, 256, 64);
@@ -202,7 +216,9 @@ function makeLabel(text, color) {
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   const sp = new THREE.Sprite(mat);
-  sp.scale.set(120, 30, 1);
+  sp.scale.set(20, 5, 1); // 첫 프레임에서 즉시 갱신됨
+  sp.userData.sizeParams = sizeParams;
+  allLabels.push(sp);
   return sp;
 }
 
@@ -233,7 +249,7 @@ sunGlow.scale.set(400, 400, 1);
 sunGlow.position.copy(sunCenter);
 scene.add(sunGlow);
 
-const sunLabel = makeLabel('태양 (Sun)', '#ffd97a');
+const sunLabel = makeLabel('태양 (Sun)', '#ffd97a', { factor: 0.045, min: 8, max: 300 });
 sunLabel.position.set(sunCenter.x, sunCenter.y + 130, sunCenter.z);
 scene.add(sunLabel);
 
@@ -418,6 +434,16 @@ for (const p of PLANETS) {
 }
 
 // ─── 위성 ────────────────────────────────────────────
+// 위성 한국어 이름
+const MOON_KR = {
+  Moon: '달', Phobos: '포보스', Deimos: '데이모스',
+  Io: '이오', Europa: '유로파', Ganymede: '가니메데', Callisto: '칼리스토',
+  Mimas: '미마스', Enceladus: '엔켈라두스', Tethys: '테티스', Dione: '디오네',
+  Rhea: '레아', Titan: '타이탄', Iapetus: '이아페투스',
+  Miranda: '미란다', Ariel: '아리엘', Umbriel: '움브리엘', Titania: '티타니아', Oberon: '오베론',
+  Triton: '트리톤',
+};
+
 // 각 행성에 딸린 달들을 만들어 scene에 직접 추가. 매 프레임 위치를
 // 부모 행성 기준으로 계산하고, 부모의 축 기울기에 맞춰 궤도면을 기울임.
 const allMoons = [];
@@ -449,6 +475,16 @@ for (const p of PLANETS) {
       angle: Math.random() * Math.PI * 2,
     };
     scene.add(moonMesh);
+
+    // 위성 라벨 (행성보다 작은 화면 크기로 보이도록 factor를 낮춤)
+    const colorHex = '#' + (m.color || 0xeeeeee).toString(16).padStart(6, '0');
+    const kr = MOON_KR[m.name] || m.name;
+    const labelText = (kr === m.name) ? m.name : `${kr} (${m.name})`;
+    const moonLabel = makeLabel(labelText, colorHex,
+      { factor: 0.020, min: 1.2, max: 70 }, 48);
+    scene.add(moonLabel);
+    moonMesh.userData.label = moonLabel;
+
     moonsList.push(moonMesh);
     allMoons.push(moonMesh);
   }
@@ -585,7 +621,12 @@ function getTargetObjs(key) {
   if (!m) return [];
   const objs = [m, m.userData.label];
   if (m.userData.orbitLine) objs.push(m.userData.orbitLine);
-  if (m.userData.moons) objs.push(...m.userData.moons);
+  if (m.userData.moons) {
+    for (const moon of m.userData.moons) {
+      objs.push(moon);
+      if (moon.userData.label) objs.push(moon.userData.label);
+    }
+  }
   return objs;
 }
 const ALL_KEYS = ['sun', ...PLANETS.map(p => p.key)];
@@ -722,14 +763,26 @@ renderer.setAnimationLoop(() => {
     const tilt = parent.userData.axisTilt;
     const cosT = Math.cos(tilt), sinT = Math.sin(tilt);
     const ca = Math.cos(a), sa = Math.sin(a);
-    // 부모 적도면 (z축 기울기 적용)
     moon.position.set(
       parent.position.x + d * ca * cosT,
       parent.position.y + d * ca * sinT,
       parent.position.z + d * sa
     );
-    moon.rotation.y += dt * 0.25; // 위성 자체 자전
+    moon.rotation.y += dt * 0.25;
+
+    // 위성 라벨: 위성 살짝 위
+    if (moon.userData.label) {
+      const r = moon.geometry.parameters.radius;
+      moon.userData.label.position.set(
+        moon.position.x,
+        moon.position.y + r + 1.5,
+        moon.position.z
+      );
+    }
   }
+
+  // 라벨 크기는 카메라 거리 기반으로 매 프레임 갱신
+  tickLabels();
 
   handleXRInput(dt);
   updateFollow(dt);
