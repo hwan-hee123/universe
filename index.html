@@ -34,6 +34,34 @@
     cursor: pointer;
   }
   #voiceSel option { background: #111; color: #fff; }
+  #settingsBtn {
+    background: rgba(0,0,0,0.6); color: #fff; border: 1px solid #555;
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  }
+  #settingsBtn.active { background: #1a73e8; border-color: #1a73e8; }
+  #settingsPanel {
+    position: absolute; top: 64px; right: 12px; z-index: 20;
+    background: rgba(15,18,28,0.97); color: #fff;
+    border: 1px solid #444; border-radius: 10px;
+    padding: 14px 16px; width: 330px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+  }
+  #settingsPanel[hidden] { display: none; }
+  #settingsPanel h3 { font-size: 13px; margin-bottom: 10px; color: #8ec5ff; }
+  #settingsPanel .row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 12px; }
+  #settingsPanel .row.cb { flex-direction: row; align-items: flex-start; gap: 6px; }
+  #settingsPanel .row.cb span { line-height: 1.3; }
+  #settingsPanel input[type=password], #settingsPanel select {
+    background: #0a0d14; color: #fff; border: 1px solid #444;
+    padding: 6px 8px; border-radius: 4px; font-size: 12px;
+  }
+  #settingsPanel .hint { font-size: 11px; color: #888; margin-top: -4px; }
+  #settingsPanel .hint a { color: #8ec5ff; }
+  #settingsPanel button.test {
+    background: #1a73e8; color: #fff; border: 0; padding: 8px 14px;
+    border-radius: 6px; cursor: pointer; width: 100%; font-size: 12px;
+  }
+  #settingsPanel .close-x { float: right; cursor: pointer; font-size: 18px; line-height: 1; color: #888; }
   #loading {
     position: absolute; bottom: 12px; left: 12px; z-index: 10;
     background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 6px;
@@ -54,9 +82,42 @@
 
 <div id="voice">
   <button id="micBtn">🎙 음성 시작</button>
-  <select id="voiceSel" title="설명 음성 선택"><option value="">자동 (최고 품질)</option></select>
+  <button id="settingsBtn" title="Gemini 자연 음성 설정">⚙ Gemini</button>
+  <select id="voiceSel" title="브라우저 음성 (Gemini 미설정 시 사용)"><option value="">자동 (최고 품질)</option></select>
   <div id="status">음성 인식 대기</div>
 </div>
+
+<div id="settingsPanel" hidden>
+  <span class="close-x" id="closeSettings">×</span>
+  <h3>Gemini 자연 음성 설정</h3>
+  <div class="row">
+    <span>Google AI Studio API 키</span>
+    <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off" />
+    <div class="hint">
+      <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>에서 무료 발급.
+      키는 이 브라우저에만 저장됩니다 (서버나 GitHub에 전송 안 됨).
+    </div>
+  </div>
+  <div class="row">
+    <span>음성</span>
+    <select id="geminiVoice">
+      <option value="Kore">Kore — 안정적, 차분한 여성</option>
+      <option value="Puck">Puck — 밝고 명랑</option>
+      <option value="Aoede">Aoede — 따뜻한 여성</option>
+      <option value="Charon">Charon — 정보전달형</option>
+      <option value="Leda">Leda — 젊은 여성</option>
+      <option value="Zephyr">Zephyr — 생기있는 여성</option>
+      <option value="Fenrir">Fenrir — 활기찬 남성</option>
+      <option value="Orus">Orus — 차분한 남성</option>
+    </select>
+  </div>
+  <label class="row cb">
+    <input type="checkbox" id="geminiChatMode" />
+    <span>자유 대화 모드 — 인식되지 않은 말은 Gemini에게 물어보고 자연스럽게 답변</span>
+  </label>
+  <button class="test" id="testVoice">🔊 이 목소리로 테스트</button>
+</div>
+
 <div id="loading">텍스처 로딩 중…</div>
 
 <script type="importmap">
@@ -761,6 +822,144 @@ function speak(text) {
   });
 }
 
+// ─── Gemini API 통합 (자연 음성 + 자유 대화) ──────────
+const GEMINI_KEY = 'geminiSettings';
+const gemini = (() => {
+  try { return JSON.parse(localStorage.getItem(GEMINI_KEY)) || {}; }
+  catch { return {}; }
+})();
+function saveGemini() { localStorage.setItem(GEMINI_KEY, JSON.stringify(gemini)); }
+
+// PCM 16-bit 24kHz mono → WAV Blob (Gemini TTS는 헤더 없는 PCM을 반환)
+function pcmToWavBlob(pcm, sampleRate = 24000) {
+  const buf = new ArrayBuffer(44 + pcm.length);
+  const dv = new DataView(buf);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF');           dv.setUint32(4, 36 + pcm.length, true);  ws(8, 'WAVE');
+  ws(12, 'fmt ');          dv.setUint32(16, 16, true);
+  dv.setUint16(20, 1, true);                                        // PCM
+  dv.setUint16(22, 1, true);                                        // mono
+  dv.setUint32(24, sampleRate, true);
+  dv.setUint32(28, sampleRate * 2, true);                           // byte rate
+  dv.setUint16(32, 2, true);                                        // block align
+  dv.setUint16(34, 16, true);                                       // bits per sample
+  ws(36, 'data');          dv.setUint32(40, pcm.length, true);
+  new Uint8Array(buf, 44).set(pcm);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+let _currentAudio = null;
+function stopCurrentAudio() {
+  if (_currentAudio) { try { _currentAudio.pause(); } catch(_){} _currentAudio = null; }
+}
+
+async function geminiTTS(text) {
+  if (!gemini.apiKey) throw new Error('API 키 없음');
+  const voiceName = gemini.voice || 'Kore';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(gemini.apiKey)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text }] }],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+      },
+    })
+  });
+  if (!res.ok) throw new Error(`Gemini TTS ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const part = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+  if (!part) throw new Error('응답에 오디오 없음');
+
+  const b64 = part.inlineData.data;
+  const bin = atob(b64);
+  const pcm = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
+  const blob = pcmToWavBlob(pcm);
+  const audioUrl = URL.createObjectURL(blob);
+  const audio = new Audio(audioUrl);
+  _currentAudio = audio;
+
+  // 재생 중 마이크 일시 중단 (피드백 방지)
+  if (recog && listening) try { recog.stop(); } catch(_){}
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      URL.revokeObjectURL(audioUrl);
+      if (_currentAudio === audio) _currentAudio = null;
+      if (recog && listening) try { recog.start(); } catch(_){}
+      resolve();
+    };
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+    audio.play().catch(cleanup);
+  });
+}
+
+async function geminiChat(prompt) {
+  if (!gemini.apiKey) throw new Error('API 키 없음');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(gemini.apiKey)}`;
+  const sys = '당신은 우주와 천문학에 친근한 안내자입니다. 한국어로 2~3 문장 정도, 자연스럽고 편한 어투로 답해주세요. 이미 사용자는 태양계 시뮬레이션을 보고 있습니다.';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: sys }] },
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.85, maxOutputTokens: 200 },
+    })
+  });
+  if (!res.ok) throw new Error(`Gemini chat ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+}
+
+// 통합: Gemini 사용 가능하면 우선, 아니면 브라우저 TTS
+async function speakSmart(text) {
+  stopCurrentAudio();
+  if (synth) synth.cancel();
+  if (gemini.apiKey) {
+    try { await geminiTTS(text); return; }
+    catch (e) {
+      console.warn('Gemini TTS 실패, 기본 음성으로 폴백:', e);
+      setStatus('⚠ Gemini 음성 실패 → 기본 음성');
+    }
+  }
+  speak(text);
+}
+
+// 설정 패널 바인딩
+(() => {
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsPanel = document.getElementById('settingsPanel');
+  const apiKeyInput = document.getElementById('apiKey');
+  const voiceSelect = document.getElementById('geminiVoice');
+  const chatToggle = document.getElementById('geminiChatMode');
+  const closeBtn = document.getElementById('closeSettings');
+  const testBtn = document.getElementById('testVoice');
+
+  apiKeyInput.value = gemini.apiKey || '';
+  voiceSelect.value = gemini.voice || 'Kore';
+  chatToggle.checked = !!gemini.chatMode;
+  if (gemini.apiKey) settingsBtn.classList.add('active');
+
+  settingsBtn.addEventListener('click', () => { settingsPanel.hidden = !settingsPanel.hidden; });
+  closeBtn.addEventListener('click', () => { settingsPanel.hidden = true; });
+  apiKeyInput.addEventListener('change', () => {
+    gemini.apiKey = apiKeyInput.value.trim(); saveGemini();
+    settingsBtn.classList.toggle('active', !!gemini.apiKey);
+  });
+  voiceSelect.addEventListener('change', () => { gemini.voice = voiceSelect.value; saveGemini(); });
+  chatToggle.addEventListener('change', () => { gemini.chatMode = chatToggle.checked; saveGemini(); });
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true; testBtn.textContent = '재생 중…';
+    await speakSmart('안녕하세요. 지금 이 목소리로 우주를 안내해 드릴게요.');
+    testBtn.disabled = false; testBtn.textContent = '🔊 이 목소리로 테스트';
+  });
+})();
+
 // ─── 음성 인식 ───────────────────────────────────────
 const micBtn = document.getElementById('micBtn');
 const statusEl = document.getElementById('status');
@@ -812,8 +1011,8 @@ function executeCommand(text) {
     const info = PLANET_INFO[cmd.target];
     if (info) {
       setVisibility('all');
-      setFollow(cmd.target);     // 해당 행성으로 비행하면서
-      speak(info);                // 음성으로 설명
+      setFollow(cmd.target);     // 해당 행성으로 비행
+      speakSmart(info);          // Gemini 우선, 없으면 브라우저 TTS
       setStatus(`📖 ${cmd.target} 설명: "${text}"`);
     } else {
       setStatus(`설명 데이터 없음: ${cmd.target}`);
@@ -821,6 +1020,7 @@ function executeCommand(text) {
   }
   else if (cmd.kind === 'stop') {
     if (synth) synth.cancel();
+    stopCurrentAudio();
     setStatus(`🤫 음성 안내 정지`);
   }
   else if (cmd.kind === 'all') {
@@ -838,7 +1038,23 @@ function executeCommand(text) {
     setStatus(`✈ ${first} 로 이동 (자전 동행): "${text}"`);
   }
   else {
-    setStatus(`? 인식 못함: "${text}"`);
+    // 자유 대화 모드 + API 키가 있으면 Gemini에게 질문 전달
+    if (gemini.chatMode && gemini.apiKey) {
+      setStatus(`🤖 Gemini에게 묻는 중: "${text}"`);
+      geminiChat(text)
+        .then(reply => {
+          if (reply) {
+            const short = reply.length > 70 ? reply.slice(0, 70) + '…' : reply;
+            setStatus(`🤖 ${short}`);
+            speakSmart(reply);
+          } else {
+            setStatus('Gemini 응답 없음');
+          }
+        })
+        .catch(err => setStatus('Gemini 오류: ' + err.message));
+    } else {
+      setStatus(`? 인식 못함: "${text}"`);
+    }
   }
 }
 if (!SR) {
