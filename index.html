@@ -39,8 +39,9 @@
   <b>Universe XR — 태양계 탐험</b><br/>
   • PC: 마우스 드래그 회전, 휠 줌<br/>
   • XR 고글: 우하단 <b>VR/AR 입장</b>, 스틱으로 이동<br/>
-  • 음성 명령 예시 (이름 말하면 가까이 날아감):<br/>
+  • 음성 명령 (이름 말하면 가까이 날아감):<br/>
   &nbsp;&nbsp;"지구", "목성", "토성", "태양"<br/>
+  &nbsp;&nbsp;"지구에 대해 설명해줘", "토성 알려줘"<br/>
   &nbsp;&nbsp;"처음으로", "전부 보여줘", "다 숨겨"
 </div>
 
@@ -637,6 +638,47 @@ function setVisibility(showSet) {
   }
 }
 
+// ─── 행성 설명 + 음성 합성(TTS) ─────────────────────
+const PLANET_INFO = {
+  sun: '태양은 태양계의 중심에 있는 항성으로, 약 46억 년 전 거대한 가스 구름이 중력으로 뭉쳐 만들어졌습니다. 표면 온도는 약 5,500도이며, 중심에서 수소가 헬륨으로 융합되면서 모든 행성에 빛과 열을 공급합니다.',
+  mercury: '수성은 태양에서 가장 가까운, 태양계에서 가장 작은 행성입니다. 대기가 거의 없어 낮 표면은 약 430도까지 오르고 밤에는 영하 180도까지 떨어집니다. 한 번 공전하는 데 88일밖에 걸리지 않습니다.',
+  venus: '금성은 두꺼운 이산화탄소 대기와 강력한 온실효과 때문에 태양계에서 가장 뜨거운 행성입니다. 표면 온도는 약 460도, 표면 압력은 지구의 90배에 달합니다. 자전이 매우 느리고 다른 행성들과 반대로 돌아서, 하루가 일 년보다 더 깁니다.',
+  earth: '지구는 태양계에서 유일하게 액체 상태의 물과 생명체가 확인된 행성입니다. 자전축이 23.5도 기울어져 있어 사계절이 생기고, 위성인 달은 지구의 조석과 자전축 안정에 중요한 역할을 합니다.',
+  mars: '화성은 표면의 산화철 때문에 붉게 보이는 행성입니다. 태양계 최대의 화산 올림푸스몬스가 있고, 과거 액체 물이 흘렀던 흔적이 남아 생명체 가능성이 연구되고 있습니다. 위성으로는 포보스와 데이모스가 있습니다.',
+  jupiter: '목성은 태양계에서 가장 큰 행성이자, 주로 수소와 헬륨으로 이루어진 가스 거인입니다. 표면의 대적반은 수백 년 동안 이어진 거대 폭풍이며, 갈릴레이가 발견한 네 위성, 이오, 유로파, 가니메데, 칼리스토가 특히 유명합니다.',
+  saturn: '토성은 화려한 고리로 유명한 가스 거인입니다. 고리는 얼음과 암석 조각으로 이루어져 있으며, 폭은 수십만 킬로미터에 달하지만 두께는 수십 미터에 불과합니다. 가장 큰 위성 타이탄은 두꺼운 대기와 액체 메탄 호수를 가지고 있습니다.',
+  uranus: '천왕성은 자전축이 약 97도 기울어져 있어 마치 옆으로 누워 굴러가는 듯한 독특한 행성입니다. 대기에 포함된 메탄이 청록색을 만들고, 미란다, 아리엘, 움브리엘, 티타니아, 오베론 다섯 위성을 거느립니다.',
+  neptune: '해왕성은 태양계에서 가장 먼 행성이며, 짙은 청색을 띱니다. 시속 2,000킬로미터에 이르는 태양계에서 가장 빠른 바람이 불고, 가장 큰 위성 트리톤은 행성의 자전과 반대 방향으로 도는 역행 위성입니다.',
+};
+
+const synth = window.speechSynthesis;
+let koVoice = null;
+function refreshVoices() {
+  if (!synth) return;
+  const vs = synth.getVoices();
+  koVoice = vs.find(v => v.lang === 'ko-KR') ||
+            vs.find(v => v.lang && v.lang.startsWith('ko')) || null;
+}
+if (synth) {
+  refreshVoices();
+  // 일부 브라우저는 voices를 비동기 로드함
+  synth.addEventListener?.('voiceschanged', refreshVoices);
+}
+
+function speak(text) {
+  if (!synth) return;
+  synth.cancel(); // 진행 중이던 발화 취소 (새 명령 우선)
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ko-KR';
+  if (koVoice) u.voice = koVoice;
+  u.rate = 1.0;
+  u.pitch = 1.0;
+  // TTS 도중 자기 음성이 마이크로 다시 들어가는 피드백 방지
+  u.onstart = () => { if (recog && listening) try { recog.stop(); } catch(_){} };
+  u.onend   = () => { if (recog && listening) try { recog.start(); } catch(_){} };
+  synth.speak(u);
+}
+
 // ─── 음성 인식 ───────────────────────────────────────
 const micBtn = document.getElementById('micBtn');
 const statusEl = document.getElementById('status');
@@ -659,6 +701,14 @@ const PLANET_KEYWORDS = {
 function parseCommand(text) {
   const t = text.toLowerCase().replace(/\s+/g, '');
   if (/(처음|시작위치|홈으로|리셋|reset|home)/.test(t))  return { kind: 'home' };
+  // 설명 명령은 행성 fly 명령보다 먼저 검사 (예: "지구 설명해줘"는 fly가 아니라 설명)
+  if (/(설명|알려|뭐야|뭐예요|무엇|어떤|소개)/.test(t)) {
+    for (const [key, re] of Object.entries(PLANET_KEYWORDS)) {
+      if (re.test(t)) return { kind: 'explain', target: key };
+    }
+  }
+  // TTS 중단 명령
+  if (/(그만|멈춰|조용|stop|silent)/.test(t)) return { kind: 'stop' };
   if (/(전부|모두|다보여|전체|all|everything)/.test(t))   return { kind: 'all' };
   if (/(다숨겨|모두숨|전부숨|hideall|nothing)/.test(t))    return { kind: 'none' };
   const wanted = new Set();
@@ -675,6 +725,21 @@ function executeCommand(text) {
     followLocalOffset = null;
     setVisibility('all');
     setStatus(`🏠 시작 위치로 복귀: "${text}"`);
+  }
+  else if (cmd.kind === 'explain') {
+    const info = PLANET_INFO[cmd.target];
+    if (info) {
+      setVisibility('all');
+      setFollow(cmd.target);     // 해당 행성으로 비행하면서
+      speak(info);                // 음성으로 설명
+      setStatus(`📖 ${cmd.target} 설명: "${text}"`);
+    } else {
+      setStatus(`설명 데이터 없음: ${cmd.target}`);
+    }
+  }
+  else if (cmd.kind === 'stop') {
+    if (synth) synth.cancel();
+    setStatus(`🤫 음성 안내 정지`);
   }
   else if (cmd.kind === 'all') {
     setVisibility('all');
