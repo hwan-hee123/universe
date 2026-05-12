@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Universe XR - 우주 탐험</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff; font-family: system-ui, sans-serif; }
+  #info {
+    position: absolute; top: 12px; left: 12px; z-index: 10;
+    background: rgba(0,0,0,0.5); padding: 10px 14px; border-radius: 8px;
+    font-size: 13px; line-height: 1.5; max-width: 340px;
+  }
+  #info b { color: #8ec5ff; }
+  #voice {
+    position: absolute; top: 12px; right: 12px; z-index: 10;
+    display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+  }
+  #micBtn {
+    background: #1a73e8; color: #fff; border: 0; padding: 10px 16px;
+    border-radius: 999px; font-size: 14px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  }
+  #micBtn.listening { background: #d93025; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,48,37,.7);} 50% { box-shadow: 0 0 0 12px rgba(217,48,37,0);} }
+  #status {
+    background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 6px;
+    font-size: 12px; max-width: 280px; text-align: right; min-height: 18px;
+  }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Universe XR</b><br/>
+  • PC: 마우스 드래그 회전, 휠 줌<br/>
+  • XR 고글: 우하단 <b>VR/AR 입장</b><br/>
+  • 음성 명령 예시:<br/>
+  &nbsp;&nbsp;"파란 행성만", "주황 행성", "보라 행성"<br/>
+  &nbsp;&nbsp;"태양만 보여줘", "전부 보여줘", "다 숨겨"
+</div>
+
+<div id="voice">
+  <button id="micBtn">🎙 음성 시작</button>
+  <div id="status">음성 인식 대기</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000005);
+scene.fog = new THREE.FogExp2(0x000010, 0.00008);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 20000);
+camera.position.set(0, 1.6, 5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 1.6, 0);
+
+// XR을 위한 플레이어 리그 (카메라를 감싸 이동시킴)
+const player = new THREE.Group();
+player.add(camera);
+scene.add(player);
+
+// ─── 별: 다층 별필드 ───────────────────────────
+function makeStars(count, radius, size, color) {
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    // 구면 균등 분포
+    const u = Math.random(), v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const phi = Math.acos(2 * v - 1);
+    const r = radius * (0.6 + 0.4 * Math.random());
+    positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i*3+2] = r * Math.cos(phi);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color, size, sizeAttenuation: true,
+    transparent: true, opacity: 0.95, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  return new THREE.Points(geo, mat);
+}
+
+scene.add(makeStars(8000, 4000, 2.5, 0xffffff));
+scene.add(makeStars(3000, 3500, 4.0, 0xaaccff));
+scene.add(makeStars(1500, 3000, 5.5, 0xffd9a8));
+scene.add(makeStars(800,  2500, 7.0, 0xff9b6b));
+
+// ─── 성운(반투명 빌보드) ────────────────────────
+function makeNebula(color, size, position) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(128,128,0, 128,128,128);
+  grad.addColorStop(0, color + 'ff');
+  grad.addColorStop(0.4, color + '55');
+  grad.addColorStop(1, color + '00');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,256,256);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.7 });
+  const sp = new THREE.Sprite(mat);
+  sp.scale.set(size, size, 1);
+  sp.position.copy(position);
+  return sp;
+}
+scene.add(makeNebula('#5566ff', 1200, new THREE.Vector3(-800,  200, -1500)));
+scene.add(makeNebula('#ff4488', 1000, new THREE.Vector3( 900, -300, -1200)));
+scene.add(makeNebula('#aa66ff',  900, new THREE.Vector3( 200,  800, -1800)));
+scene.add(makeNebula('#44ddff',  800, new THREE.Vector3(-600, -500,  -900)));
+
+// ─── 행성 ────────────────────────────────────
+function makePlanet(radius, color, emissive, position) {
+  const geo = new THREE.SphereGeometry(radius, 48, 48);
+  const mat = new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: 0.15, roughness: 0.9, metalness: 0.0 });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.copy(position);
+  return m;
+}
+const planetA = makePlanet(40, 0x88aaff, 0x112244, new THREE.Vector3(-150, 30, -250));
+const planetB = makePlanet(25, 0xffaa66, 0x331100, new THREE.Vector3(180, -40, -200));
+const planetC = makePlanet(60, 0xaa88ff, 0x221133, new THREE.Vector3(50, 100, -500));
+planetA.userData.name = 'blue';
+planetB.userData.name = 'orange';
+planetC.userData.name = 'purple';
+scene.add(planetA, planetB, planetC);
+
+// 행성 이름 라벨
+function makeLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(0,0,512,128);
+  ctx.font = 'bold 56px system-ui, sans-serif';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, 64);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sp = new THREE.Sprite(mat);
+  sp.scale.set(80, 20, 1);
+  return sp;
+}
+const labelA = makeLabel('파란 행성 (Blue)', '#88aaff');
+labelA.position.set(planetA.position.x, planetA.position.y + 55, planetA.position.z);
+const labelB = makeLabel('주황 행성 (Orange)', '#ffaa66');
+labelB.position.set(planetB.position.x, planetB.position.y + 40, planetB.position.z);
+const labelC = makeLabel('보라 행성 (Purple)', '#cc99ff');
+labelC.position.set(planetC.position.x, planetC.position.y + 80, planetC.position.z);
+scene.add(labelA, labelB, labelC);
+planetA.userData.label = labelA;
+planetB.userData.label = labelB;
+planetC.userData.label = labelC;
+
+// 토성 같은 고리
+const ringGeo = new THREE.RingGeometry(75, 110, 64);
+const ringMat = new THREE.MeshBasicMaterial({ color: 0xffeebb, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+const ring = new THREE.Mesh(ringGeo, ringMat);
+ring.rotation.x = Math.PI * 0.4;
+ring.position.copy(planetC.position);
+scene.add(ring);
+
+// 항성 (밝은 광원)
+const sun = new THREE.Mesh(
+  new THREE.SphereGeometry(30, 32, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffeeaa })
+);
+sun.position.set(400, 200, -800);
+scene.add(sun);
+
+const sunLight = new THREE.PointLight(0xffeecc, 3, 0, 0);
+sunLight.position.copy(sun.position);
+scene.add(sunLight);
+scene.add(new THREE.AmbientLight(0x223355, 0.4));
+
+// ─── XR 컨트롤러 ─────────────────────────────
+const controllerFactory = new XRControllerModelFactory();
+const controllers = [];
+for (let i = 0; i < 2; i++) {
+  const c = renderer.xr.getController(i);
+  player.add(c);
+  const grip = renderer.xr.getControllerGrip(i);
+  grip.add(controllerFactory.createControllerModel(grip));
+  player.add(grip);
+  controllers.push(c);
+}
+
+// 스틱 입력으로 이동
+const moveSpeed = 30; // 초당 단위
+const tmpQuat = new THREE.Quaternion();
+const tmpVec = new THREE.Vector3();
+function handleXRInput(dt) {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  for (const src of session.inputSources) {
+    if (!src.gamepad) continue;
+    const axes = src.gamepad.axes;
+    if (axes.length < 4) continue;
+    const x = Math.abs(axes[2]) > 0.15 ? axes[2] : 0;
+    const z = Math.abs(axes[3]) > 0.15 ? axes[3] : 0;
+    if (x === 0 && z === 0) continue;
+    // 카메라 방향 기준 이동
+    camera.getWorldQuaternion(tmpQuat);
+    tmpVec.set(x, 0, z).applyQuaternion(tmpQuat);
+    tmpVec.y = 0;
+    tmpVec.normalize().multiplyScalar(moveSpeed * dt);
+    player.position.add(tmpVec);
+  }
+}
+
+// ─── 가시성 제어 ─────────────────────────────
+const targets = {
+  blue:   { objs: [planetA, labelA] },
+  orange: { objs: [planetB, labelB] },
+  purple: { objs: [planetC, labelC, ring] },
+  sun:    { objs: [sun] },
+};
+
+function setVisibility(showSet) {
+  // showSet: Set of keys (blue/orange/purple/sun) or 'all' or 'none'
+  for (const key of Object.keys(targets)) {
+    const visible = showSet === 'all' ? true : (showSet === 'none' ? false : showSet.has(key));
+    targets[key].objs.forEach(o => o.visible = visible);
+  }
+}
+
+// ─── 음성 인식 ──────────────────────────────
+const micBtn = document.getElementById('micBtn');
+const statusEl = document.getElementById('status');
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null, listening = false;
+
+function setStatus(msg) { statusEl.textContent = msg; }
+
+function parseCommand(text) {
+  const t = text.toLowerCase().replace(/\s+/g, '');
+  // 전체 / 숨김
+  if (/(전부|모두|다보여|전체|all|everything)/.test(t)) return { kind: 'all' };
+  if (/(다숨겨|모두숨|전부숨|hideall|nothing)/.test(t)) return { kind: 'none' };
+
+  const wanted = new Set();
+  if (/(파란|파랑|블루|blue|하늘색)/.test(t)) wanted.add('blue');
+  if (/(주황|오렌지|orange|노란|노랑)/.test(t)) wanted.add('orange');
+  if (/(보라|퍼플|purple|바이올렛|violet)/.test(t)) wanted.add('purple');
+  if (/(태양|항성|해|sun|star)/.test(t)) wanted.add('sun');
+  if (wanted.size > 0) return { kind: 'set', wanted };
+  return { kind: 'unknown' };
+}
+
+function executeCommand(text) {
+  const cmd = parseCommand(text);
+  if (cmd.kind === 'all')      { setVisibility('all');  setStatus(`✓ 전부 표시: "${text}"`); }
+  else if (cmd.kind === 'none'){ setVisibility('none'); setStatus(`✓ 모두 숨김: "${text}"`); }
+  else if (cmd.kind === 'set') { setVisibility(cmd.wanted); setStatus(`✓ 표시: ${[...cmd.wanted].join(', ')} ("${text}")`); }
+  else                         { setStatus(`? 인식 못함: "${text}"`); }
+}
+
+if (!SR) {
+  micBtn.disabled = true;
+  micBtn.textContent = '음성 미지원 브라우저';
+  setStatus('Chrome/Edge에서 사용하세요');
+} else {
+  recog = new SR();
+  recog.lang = 'ko-KR';
+  recog.continuous = true;
+  recog.interimResults = false;
+
+  recog.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        const text = e.results[i][0].transcript.trim();
+        executeCommand(text);
+      }
+    }
+  };
+  recog.onerror = (e) => setStatus('오류: ' + e.error);
+  recog.onend = () => {
+    if (listening) { try { recog.start(); } catch(_){} } // 자동 재시작
+    else { micBtn.classList.remove('listening'); micBtn.textContent = '🎙 음성 시작'; }
+  };
+
+  micBtn.addEventListener('click', () => {
+    if (!listening) {
+      try { recog.start(); listening = true; micBtn.classList.add('listening'); micBtn.textContent = '⏹ 음성 중지'; setStatus('듣는 중… 명령을 말하세요'); }
+      catch(err) { setStatus('시작 실패: ' + err.message); }
+    } else {
+      listening = false; recog.stop();
+    }
+  });
+}
+
+// ─── 리사이즈 ────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─── 루프 ────────────────────────────────────
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  planetA.rotation.y += dt * 0.05;
+  planetB.rotation.y += dt * 0.08;
+  planetC.rotation.y += dt * 0.03;
+  ring.rotation.z += dt * 0.02;
+  handleXRInput(dt);
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
