@@ -853,7 +853,8 @@ function stopCurrentAudio() {
   if (_currentAudio) { try { _currentAudio.pause(); } catch(_){} _currentAudio = null; }
 }
 
-async function geminiTTS(text) {
+// Gemini TTS: 한 문장에 대한 WAV Blob만 반환 (재생/마이크 제어는 호출자가 담당)
+async function geminiTTSBlob(text) {
   if (!gemini.apiKey) throw new Error('API 키 없음');
   const voiceName = gemini.voice || 'Kore';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(gemini.apiKey)}`;
@@ -872,24 +873,21 @@ async function geminiTTS(text) {
   const data = await res.json();
   const part = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
   if (!part) throw new Error('응답에 오디오 없음');
-
-  const b64 = part.inlineData.data;
-  const bin = atob(b64);
+  const bin = atob(part.inlineData.data);
   const pcm = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
-  const blob = pcmToWavBlob(pcm);
+  return pcmToWavBlob(pcm);
+}
+
+// WAV Blob 재생 → Promise (재생 완료 시 resolve)
+function playAudioBlob(blob) {
   const audioUrl = URL.createObjectURL(blob);
   const audio = new Audio(audioUrl);
   _currentAudio = audio;
-
-  // 재생 중 마이크 일시 중단 (피드백 방지)
-  if (recog && listening) try { recog.stop(); } catch(_){}
-
   return new Promise((resolve) => {
     const cleanup = () => {
       URL.revokeObjectURL(audioUrl);
       if (_currentAudio === audio) _currentAudio = null;
-      if (recog && listening) try { recog.start(); } catch(_){}
       resolve();
     };
     audio.onended = cleanup;
@@ -898,17 +896,18 @@ async function geminiTTS(text) {
   });
 }
 
+// 비스트리밍 채팅 (호환용, 자유 대화는 chatAndSpeakStream 사용)
 async function geminiChat(prompt) {
   if (!gemini.apiKey) throw new Error('API 키 없음');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(gemini.apiKey)}`;
-  const sys = '당신은 우주와 천문학에 친근한 안내자입니다. 한국어로 2~3 문장 정도, 자연스럽고 편한 어투로 답해주세요. 이미 사용자는 태양계 시뮬레이션을 보고 있습니다.';
+  const sys = '당신은 우주와 천문학에 친근한 안내자입니다. 한국어로 1~2 문장으로 짧게, 친구처럼 답해주세요.';
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: sys }] },
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.85, maxOutputTokens: 200 },
+      generationConfig: { temperature: 0.85, maxOutputTokens: 150 },
     })
   });
   if (!res.ok) throw new Error(`Gemini chat ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -916,18 +915,108 @@ async function geminiChat(prompt) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 }
 
-// 통합: Gemini 사용 가능하면 우선, 아니면 브라우저 TTS
+// 통합 speak: 문장 단위로 병렬 TTS → 순차 재생 (전체 대기 시간을 대폭 단축)
 async function speakSmart(text) {
   stopCurrentAudio();
   if (synth) synth.cancel();
-  if (gemini.apiKey) {
-    try { await geminiTTS(text); return; }
-    catch (e) {
-      console.warn('Gemini TTS 실패, 기본 음성으로 폴백:', e);
-      setStatus('⚠ Gemini 음성 실패 → 기본 음성');
+  if (!gemini.apiKey) { speak(text); return; }
+
+  const sentences = text.split(/(?<=[.!?。])\s+/).filter(s => s.trim());
+  if (sentences.length === 0) sentences.push(text);
+
+  // 모든 문장의 TTS 요청을 동시에 발사 (병렬화)
+  const ttsPromises = sentences.map(s =>
+    geminiTTSBlob(s).catch(e => { console.warn('TTS 실패:', e); return null; })
+  );
+
+  if (recog && listening) try { recog.stop(); } catch(_){}
+  try {
+    for (const p of ttsPromises) {
+      const blob = await p;
+      if (blob) await playAudioBlob(blob);
     }
+  } finally {
+    if (recog && listening) try { recog.start(); } catch(_){}
   }
-  speak(text);
+}
+
+// 자유 대화: 텍스트를 스트리밍으로 받으면서 문장이 완성될 때마다 즉시 TTS 시작
+// → 첫 문장 오디오를 1~2초 안에 들을 수 있음
+async function chatAndSpeakStream(prompt, onPartialText) {
+  if (!gemini.apiKey) throw new Error('API 키 없음');
+  stopCurrentAudio();
+  if (synth) synth.cancel();
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?alt=sse&key=${encodeURIComponent(gemini.apiKey)}`;
+  const sys = '당신은 우주와 천문학의 친근한 안내자입니다. 한국어로 1~2 문장으로 매우 짧고 자연스럽게, 친구처럼 답해주세요.';
+
+  if (recog && listening) try { recog.stop(); } catch(_){}
+
+  let fullText = '';
+  let buffer = '';
+  let playChain = Promise.resolve();
+
+  function fireTTSFor(sentence) {
+    const ttsP = geminiTTSBlob(sentence).catch(e => { console.warn('TTS:', e); return null; });
+    playChain = playChain.then(async () => {
+      const blob = await ttsP;
+      if (blob) await playAudioBlob(blob);
+    });
+  }
+  function flush(finalize = false) {
+    while (true) {
+      const m = buffer.match(/^([\s\S]*?[.!?。])(?:\s+|$)/);
+      if (!m) break;
+      const sentence = m[1].trim();
+      buffer = buffer.slice(m[0].length);
+      if (sentence) fireTTSFor(sentence);
+    }
+    if (finalize && buffer.trim()) { fireTTSFor(buffer.trim()); buffer = ''; }
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: sys }] },
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.85, maxOutputTokens: 150 },
+      })
+    });
+    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let lineBuf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      lineBuf += decoder.decode(value, { stream: true });
+      const lines = lineBuf.split('\n');
+      lineBuf = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const json = line.slice(5).trim();
+        if (!json) continue;
+        try {
+          const obj = JSON.parse(json);
+          const t = obj.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (t) {
+            fullText += t;
+            buffer += t;
+            flush(false);
+            onPartialText?.(fullText);
+          }
+        } catch (e) { /* JSON incomplete, ignore */ }
+      }
+    }
+    flush(true);
+    await playChain;
+  } finally {
+    if (recog && listening) try { recog.start(); } catch(_){}
+  }
+  return fullText;
 }
 
 // 설정 패널 바인딩
@@ -1038,20 +1127,13 @@ function executeCommand(text) {
     setStatus(`✈ ${first} 로 이동 (자전 동행): "${text}"`);
   }
   else {
-    // 자유 대화 모드 + API 키가 있으면 Gemini에게 질문 전달
+    // 자유 대화 모드 + API 키 → 스트리밍으로 텍스트 받으며 문장 단위 즉시 TTS
     if (gemini.chatMode && gemini.apiKey) {
-      setStatus(`🤖 Gemini에게 묻는 중: "${text}"`);
-      geminiChat(text)
-        .then(reply => {
-          if (reply) {
-            const short = reply.length > 70 ? reply.slice(0, 70) + '…' : reply;
-            setStatus(`🤖 ${short}`);
-            speakSmart(reply);
-          } else {
-            setStatus('Gemini 응답 없음');
-          }
-        })
-        .catch(err => setStatus('Gemini 오류: ' + err.message));
+      setStatus(`🤖 생각 중…`);
+      chatAndSpeakStream(text, (partial) => {
+        const short = partial.length > 70 ? partial.slice(0, 70) + '…' : partial;
+        setStatus(`🤖 ${short}`);
+      }).catch(err => setStatus('Gemini 오류: ' + err.message));
     } else {
       setStatus(`? 인식 못함: "${text}"`);
     }
