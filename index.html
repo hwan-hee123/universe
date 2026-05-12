@@ -124,10 +124,10 @@
       <option value="Orus">Orus — 차분한 남성</option>
     </select>
   </div>
-  <label class="row cb">
-    <input type="checkbox" id="geminiChatMode" />
-    <span>자유 대화 모드 — 인식되지 않은 말은 Gemini에게 물어보고 자연스럽게 답변</span>
-  </label>
+  <div class="hint" style="margin-top:8px;">
+    💡 짧은 행성 설명은 🎙 음성 명령 (코드 대본을 자연 음성으로 읽음).<br/>
+    자유 질문/대화는 📞 Live 대화 (실시간 양방향).
+  </div>
   <button class="test" id="testVoice">🔊 이 목소리로 테스트</button>
 </div>
 
@@ -1367,13 +1367,11 @@ document.getElementById('liveBtn').addEventListener('click', () => {
   const settingsPanel = document.getElementById('settingsPanel');
   const apiKeyInput = document.getElementById('apiKey');
   const voiceSelect = document.getElementById('geminiVoice');
-  const chatToggle = document.getElementById('geminiChatMode');
   const closeBtn = document.getElementById('closeSettings');
   const testBtn = document.getElementById('testVoice');
 
   apiKeyInput.value = gemini.apiKey || '';
   voiceSelect.value = gemini.voice || 'Kore';
-  chatToggle.checked = !!gemini.chatMode;
   if (gemini.apiKey) settingsBtn.classList.add('active');
 
   settingsBtn.addEventListener('click', () => { settingsPanel.hidden = !settingsPanel.hidden; });
@@ -1381,9 +1379,9 @@ document.getElementById('liveBtn').addEventListener('click', () => {
   apiKeyInput.addEventListener('change', () => {
     gemini.apiKey = apiKeyInput.value.trim(); saveGemini();
     settingsBtn.classList.toggle('active', !!gemini.apiKey);
+    live.discoveredModel = null; // 키 바뀌면 모델 재탐색
   });
   voiceSelect.addEventListener('change', () => { gemini.voice = voiceSelect.value; saveGemini(); });
-  chatToggle.addEventListener('change', () => { gemini.chatMode = chatToggle.checked; saveGemini(); });
   testBtn.addEventListener('click', async () => {
     testBtn.disabled = true; testBtn.textContent = '재생 중…';
     await speakSmart('안녕하세요. 지금 이 목소리로 우주를 안내해 드릴게요.');
@@ -1469,16 +1467,8 @@ function executeCommand(text) {
     setStatus(`✈ ${first} 로 이동 (자전 동행): "${text}"`);
   }
   else {
-    // 자유 대화 모드 + API 키 → 스트리밍으로 텍스트 받으며 문장 단위 즉시 TTS
-    if (gemini.chatMode && gemini.apiKey) {
-      setStatus(`🤖 생각 중…`);
-      chatAndSpeakStream(text, (partial) => {
-        const short = partial.length > 70 ? partial.slice(0, 70) + '…' : partial;
-        setStatus(`🤖 ${short}`);
-      }).catch(err => setStatus('Gemini 오류: ' + err.message));
-    } else {
-      setStatus(`? 인식 못함: "${text}"`);
-    }
+    // 음성 명령은 항상 코드 안의 대본만 사용. 자유 질문은 📞 Live 대화 사용.
+    setStatus(`? 인식 못함: "${text}" — 자유 질문은 📞 Live 대화로`);
   }
 }
 if (!SR) {
