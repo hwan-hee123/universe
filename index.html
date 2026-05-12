@@ -27,6 +27,13 @@
     background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 6px;
     font-size: 12px; max-width: 320px; text-align: right; min-height: 18px;
   }
+  #voiceSel {
+    background: rgba(0,0,0,0.6); color: #fff;
+    border: 1px solid #555; border-radius: 6px;
+    padding: 4px 8px; font-size: 11px; max-width: 260px;
+    cursor: pointer;
+  }
+  #voiceSel option { background: #111; color: #fff; }
   #loading {
     position: absolute; bottom: 12px; left: 12px; z-index: 10;
     background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 6px;
@@ -47,6 +54,7 @@
 
 <div id="voice">
   <button id="micBtn">🎙 음성 시작</button>
+  <select id="voiceSel" title="설명 음성 선택"><option value="">자동 (최고 품질)</option></select>
   <div id="status">음성 인식 대기</div>
 </div>
 <div id="loading">텍스처 로딩 중…</div>
@@ -653,30 +661,104 @@ const PLANET_INFO = {
 
 const synth = window.speechSynthesis;
 let koVoice = null;
+
+// 음성 품질 점수 — 신경망/자연/온라인 voice는 합성 티가 적음
+function voiceScore(v) {
+  const n = (v.name || '').toLowerCase();
+  let s = 0;
+  // Edge / Azure의 신경망 보이스
+  if (/natural|neural|premium|wavenet|enhanced/.test(n)) s += 100;
+  if (/online/.test(n))   s += 30;
+  // 한국 마소 신경망 보이스 이름
+  if (/sunhi|injoon|seoyeon|bongjin|gookmin|jimin/.test(n)) s += 50;
+  // 구글/애플 클라우드 보이스
+  if (/google/.test(n))   s += 25;
+  if (/yuna|sora|siri/.test(n)) s += 20;
+  // 로컬 보이스(보통 합성 티 많음)는 페널티 없음, 그냥 0
+  if (/microsoft.*heami/.test(n) && !/online|natural/.test(n)) s -= 10;
+  return s;
+}
+
 function refreshVoices() {
   if (!synth) return;
   const vs = synth.getVoices();
-  koVoice = vs.find(v => v.lang === 'ko-KR') ||
-            vs.find(v => v.lang && v.lang.startsWith('ko')) || null;
+  const koreans = vs.filter(v => v.lang && (v.lang === 'ko-KR' || v.lang.startsWith('ko')));
+
+  // 1) 사용자가 직접 고른 음성이 있으면 우선
+  const saved = localStorage.getItem('voiceName');
+  if (saved) {
+    const m = vs.find(v => v.name === saved);
+    if (m) { koVoice = m; populateVoiceSelector(koreans); return; }
+  }
+  // 2) 자동: 품질 점수가 가장 높은 한국어 음성
+  koreans.sort((a, b) => voiceScore(b) - voiceScore(a));
+  koVoice = koreans[0] || null;
+
+  populateVoiceSelector(koreans);
 }
+
+function shortVoiceName(v) {
+  let n = v.name || '(이름 없음)';
+  n = n.replace(/\s*-\s*Korean[^()]*$/i, '');
+  n = n.replace(/\s*Korean\s*\(Korea\)/i, '');
+  n = n.replace(/^Microsoft\s+/i, '');
+  return n;
+}
+
+function populateVoiceSelector(koreans) {
+  const sel = document.getElementById('voiceSel');
+  if (!sel) return;
+  const saved = localStorage.getItem('voiceName') || '';
+  sel.innerHTML = '';
+  const auto = document.createElement('option');
+  auto.value = ''; auto.textContent = '자동 (최고 품질)';
+  sel.appendChild(auto);
+  for (const v of koreans) {
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    const star = voiceScore(v) >= 100 ? '★ ' : (voiceScore(v) >= 30 ? '· ' : '');
+    opt.textContent = star + shortVoiceName(v);
+    sel.appendChild(opt);
+  }
+  sel.value = saved;
+}
+
 if (synth) {
   refreshVoices();
-  // 일부 브라우저는 voices를 비동기 로드함
   synth.addEventListener?.('voiceschanged', refreshVoices);
+  document.getElementById('voiceSel').addEventListener('change', (e) => {
+    const name = e.target.value;
+    if (name) localStorage.setItem('voiceName', name);
+    else      localStorage.removeItem('voiceName');
+    refreshVoices();
+    // 선택 즉시 샘플 재생
+    speak('안녕하세요. 이 목소리로 설명해 드릴게요.');
+  });
 }
 
 function speak(text) {
   if (!synth) return;
-  synth.cancel(); // 진행 중이던 발화 취소 (새 명령 우선)
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'ko-KR';
-  if (koVoice) u.voice = koVoice;
-  u.rate = 1.0;
-  u.pitch = 1.0;
-  // TTS 도중 자기 음성이 마이크로 다시 들어가는 피드백 방지
-  u.onstart = () => { if (recog && listening) try { recog.stop(); } catch(_){} };
-  u.onend   = () => { if (recog && listening) try { recog.start(); } catch(_){} };
-  synth.speak(u);
+  synth.cancel();
+  // 문장 단위로 쪼개서 큐잉 → 사이에 자연스러운 호흡이 생김
+  const sentences = text.split(/(?<=[.!?。])\s+/).filter(s => s.trim());
+  if (sentences.length === 0) sentences.push(text);
+
+  sentences.forEach((sentence, i) => {
+    const u = new SpeechSynthesisUtterance(sentence);
+    u.lang = 'ko-KR';
+    if (koVoice) u.voice = koVoice;
+    // 살짝 느리게 + 피치 조금 낮춰 자연스러운 톤
+    u.rate  = 0.97;
+    u.pitch = 0.95;
+    // 첫 문장 시작 시 마이크 일시 중지, 마지막 문장 끝에 재개 (피드백 방지)
+    if (i === 0) {
+      u.onstart = () => { if (recog && listening) try { recog.stop(); } catch(_){} };
+    }
+    if (i === sentences.length - 1) {
+      u.onend = () => { if (recog && listening) try { recog.start(); } catch(_){} };
+    }
+    synth.speak(u);
+  });
 }
 
 // ─── 음성 인식 ───────────────────────────────────────
