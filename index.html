@@ -39,6 +39,17 @@
     padding: 6px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
   }
   #settingsBtn.active { background: #1a73e8; border-color: #1a73e8; }
+  #liveBtn {
+    background: rgba(0,0,0,0.6); color: #fff; border: 1px solid #555;
+    padding: 6px 14px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  }
+  #liveBtn.connecting { background: #ff9800; border-color: #ff9800; }
+  #liveBtn.active     { background: #34a853; border-color: #34a853; animation: livePulse 1.6s infinite; }
+  #liveBtn.speaking   { background: #d93025; border-color: #d93025; }
+  @keyframes livePulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(52,168,83,.6); }
+    50%     { box-shadow: 0 0 0 10px rgba(52,168,83,0); }
+  }
   #settingsPanel {
     position: absolute; top: 64px; right: 12px; z-index: 20;
     background: rgba(15,18,28,0.97); color: #fff;
@@ -74,14 +85,16 @@
   <b>Universe XR — 태양계 탐험</b><br/>
   • PC: 마우스 드래그 회전, 휠 줌<br/>
   • XR 고글: 우하단 <b>VR/AR 입장</b>, 스틱으로 이동<br/>
-  • 음성 명령 (이름 말하면 가까이 날아감):<br/>
+  • <b>📞 Live 대화</b>: Gemini와 실시간 음성 대화 (0.5초 응답)<br/>
+  • <b>🎙 음성 명령</b>: 빠른 단축 명령<br/>
   &nbsp;&nbsp;"지구", "목성", "토성", "태양"<br/>
-  &nbsp;&nbsp;"지구에 대해 설명해줘", "토성 알려줘"<br/>
+  &nbsp;&nbsp;"지구에 대해 설명해줘"<br/>
   &nbsp;&nbsp;"처음으로", "전부 보여줘", "다 숨겨"
 </div>
 
 <div id="voice">
-  <button id="micBtn">🎙 음성 시작</button>
+  <button id="liveBtn" title="Gemini Live 실시간 음성 대화">📞 Live 대화</button>
+  <button id="micBtn">🎙 음성 명령</button>
   <button id="settingsBtn" title="Gemini 자연 음성 설정">⚙ Gemini</button>
   <select id="voiceSel" title="브라우저 음성 (Gemini 미설정 시 사용)"><option value="">자동 (최고 품질)</option></select>
   <div id="status">음성 인식 대기</div>
@@ -1019,6 +1032,261 @@ async function chatAndSpeakStream(prompt, onPartialText) {
   return fullText;
 }
 
+// ─── Gemini Live API (WebSocket 양방향 실시간 음성) ─
+const LIVE_MODEL = 'gemini-2.0-flash-live-001';
+const LIVE_SYSTEM = '당신은 우주와 천문학에 친근한 안내자입니다. 사용자는 지금 태양계 시뮬레이션을 보고 있어요. 한국어로 자연스럽고 친구처럼 1~2 문장 정도로 짧게 답해주세요. 인사말이나 격식 차린 표현은 생략하고 바로 본론으로 들어가세요.';
+
+const live = {
+  active: false,
+  connecting: false,
+  ws: null,
+  micStream: null,
+  audioInCtx: null,
+  audioOutCtx: null,
+  source: null,
+  processor: null,
+  nextPlayTime: 0,
+  playSources: [],
+};
+
+function setLiveBtn(state) {
+  const btn = document.getElementById('liveBtn');
+  if (!btn) return;
+  btn.classList.remove('connecting', 'active', 'speaking');
+  if (state === 'connecting') { btn.classList.add('connecting'); btn.textContent = '⏳ 연결 중…'; }
+  else if (state === 'active')   { btn.classList.add('active');   btn.textContent = '⏹ Live 종료'; }
+  else if (state === 'speaking') { btn.classList.add('speaking'); btn.textContent = '🔊 응답 중…'; }
+  else                            { btn.textContent = '📞 Live 대화'; }
+}
+
+// Float32 [-1,1] → Int16 PCM, 동시에 fromRate→16kHz 다운샘플
+function downsampleToInt16(input, fromRate, toRate = 16000) {
+  if (fromRate === toRate) {
+    const out = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i]));
+      out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return out;
+  }
+  const ratio = fromRate / toRate;
+  const outLen = Math.floor(input.length / ratio);
+  const out = new Int16Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const idx = i * ratio;
+    const lo = Math.floor(idx);
+    const hi = Math.min(lo + 1, input.length - 1);
+    const frac = idx - lo;
+    const sample = input[lo] * (1 - frac) + input[hi] * frac;
+    const s = Math.max(-1, Math.min(1, sample));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return out;
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function startLive() {
+  if (live.active || live.connecting) return;
+  if (!gemini.apiKey) {
+    setStatus('⚠ Gemini API 키를 먼저 설정 (⚙ Gemini)');
+    return;
+  }
+  // 기존 SpeechRecognition은 충돌 방지를 위해 정지
+  if (recog && listening) { try { recog.stop(); } catch(_){} listening = false; micBtn.classList.remove('listening'); micBtn.textContent = '🎙 음성 명령'; }
+  if (synth) synth.cancel();
+  stopCurrentAudio();
+
+  live.connecting = true;
+  setLiveBtn('connecting');
+  setStatus('📞 Live 연결 중…');
+
+  try {
+    // 1) 마이크 권한 요청
+    live.micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }
+    });
+
+    // 2) WebSocket 연결
+    const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(gemini.apiKey)}`;
+    live.ws = new WebSocket(url);
+
+    live.ws.onopen = () => {
+      // 3) 셋업 메시지 전송
+      live.ws.send(JSON.stringify({
+        setup: {
+          model: `models/${LIVE_MODEL}`,
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: gemini.voice || 'Kore' }
+              }
+            }
+          },
+          systemInstruction: { parts: [{ text: LIVE_SYSTEM }] }
+        }
+      }));
+    };
+
+    live.ws.onmessage = handleLiveMessage;
+    live.ws.onerror = () => { setStatus('⚠ Live 연결 오류'); };
+    live.ws.onclose = (e) => {
+      if (live.active || live.connecting) {
+        setStatus(`📞 Live 연결 종료 (${e.code})`);
+        stopLive(true);
+      }
+    };
+  } catch (e) {
+    console.error(e);
+    setStatus('⚠ Live 시작 실패: ' + (e.message || e.name));
+    stopLive(true);
+  }
+}
+
+async function handleLiveMessage(e) {
+  let data;
+  try {
+    const raw = (e.data instanceof Blob) ? await e.data.text() : e.data;
+    data = JSON.parse(raw);
+  } catch (err) {
+    return;
+  }
+
+  if (data.setupComplete) {
+    live.connecting = false;
+    live.active = true;
+    setLiveBtn('active');
+    setStatus('🟢 Live 대화 중 — 말해보세요');
+    startMicStreaming();
+    return;
+  }
+
+  if (data.serverContent) {
+    const sc = data.serverContent;
+    if (sc.interrupted) {
+      stopPlaybackQueue();
+      setLiveBtn('active');
+    }
+    const parts = sc.modelTurn?.parts || [];
+    let gotAudio = false;
+    for (const part of parts) {
+      if (part.inlineData?.mimeType?.startsWith('audio/pcm')) {
+        playLivePcm(part.inlineData.data);
+        gotAudio = true;
+      }
+    }
+    if (gotAudio) setLiveBtn('speaking');
+    if (sc.turnComplete) setLiveBtn('active');
+  }
+}
+
+function startMicStreaming() {
+  // 브라우저는 sampleRate 힌트를 무시할 수 있어 실제 값으로 다운샘플
+  live.audioInCtx = new AudioContext({ sampleRate: 16000 });
+  const actualRate = live.audioInCtx.sampleRate;
+  live.source = live.audioInCtx.createMediaStreamSource(live.micStream);
+
+  // ScriptProcessor (deprecated but simple). 4096 buffer ≈ 256ms @ 16kHz
+  const bufferSize = 4096;
+  live.processor = live.audioInCtx.createScriptProcessor(bufferSize, 1, 1);
+  live.processor.onaudioprocess = (e) => {
+    if (!live.active || live.ws?.readyState !== WebSocket.OPEN) return;
+    const input = e.inputBuffer.getChannelData(0);
+    const pcm16 = downsampleToInt16(input, actualRate, 16000);
+    const bytes = new Uint8Array(pcm16.buffer);
+    const b64 = bytesToBase64(bytes);
+    live.ws.send(JSON.stringify({
+      realtimeInput: {
+        mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: b64 }]
+      }
+    }));
+  };
+
+  // ScriptProcessor가 동작하려면 destination에 연결 필요 (소리는 안 남)
+  live.source.connect(live.processor);
+  // gain 0의 노드로 보내 자기 소리가 스피커로 안 나가게
+  const muteGain = live.audioInCtx.createGain();
+  muteGain.gain.value = 0;
+  live.processor.connect(muteGain);
+  muteGain.connect(live.audioInCtx.destination);
+}
+
+function playLivePcm(b64) {
+  if (!live.audioOutCtx) {
+    live.audioOutCtx = new AudioContext({ sampleRate: 24000 });
+    live.nextPlayTime = 0;
+  }
+  const ctx = live.audioOutCtx;
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  // 16-bit little-endian PCM
+  const pcm16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+
+  const buffer = ctx.createBuffer(1, pcm16.length, 24000);
+  const ch = buffer.getChannelData(0);
+  for (let i = 0; i < pcm16.length; i++) ch[i] = pcm16[i] / 32768;
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  const startAt = Math.max(live.nextPlayTime, ctx.currentTime + 0.02);
+  source.start(startAt);
+  live.nextPlayTime = startAt + buffer.duration;
+  live.playSources.push(source);
+  source.onended = () => {
+    const idx = live.playSources.indexOf(source);
+    if (idx >= 0) live.playSources.splice(idx, 1);
+  };
+}
+
+function stopPlaybackQueue() {
+  for (const s of live.playSources) { try { s.stop(); } catch(_){} }
+  live.playSources = [];
+  if (live.audioOutCtx) live.nextPlayTime = live.audioOutCtx.currentTime;
+}
+
+function stopLive(silent = false) {
+  try { live.processor?.disconnect(); } catch(_){}
+  try { live.source?.disconnect(); } catch(_){}
+  try { live.audioInCtx?.close(); } catch(_){}
+  try { live.audioOutCtx?.close(); } catch(_){}
+  if (live.micStream) live.micStream.getTracks().forEach(t => t.stop());
+  try { live.ws?.close(); } catch(_){}
+
+  live.ws = null;
+  live.micStream = null;
+  live.audioInCtx = null;
+  live.audioOutCtx = null;
+  live.source = null;
+  live.processor = null;
+  live.playSources = [];
+  live.nextPlayTime = 0;
+  live.active = false;
+  live.connecting = false;
+
+  setLiveBtn('idle');
+  if (!silent) setStatus('📞 Live 종료');
+}
+
+document.getElementById('liveBtn').addEventListener('click', () => {
+  if (live.active || live.connecting) stopLive();
+  else startLive();
+});
+
 // 설정 패널 바인딩
 (() => {
   const settingsBtn = document.getElementById('settingsBtn');
@@ -1159,6 +1427,8 @@ if (!SR) {
     else { micBtn.classList.remove('listening'); micBtn.textContent = '🎙 음성 시작'; }
   };
   micBtn.addEventListener('click', () => {
+    // Live 모드와 충돌하므로 먼저 종료
+    if (live.active || live.connecting) stopLive();
     if (!listening) {
       try { recog.start(); listening = true; micBtn.classList.add('listening'); micBtn.textContent = '⏹ 음성 중지'; setStatus('듣는 중… 행성 이름을 말하세요'); }
       catch(err) { setStatus('시작 실패: ' + err.message); }
