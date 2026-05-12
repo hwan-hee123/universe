@@ -39,9 +39,9 @@
   <b>Universe XR — 태양계 탐험</b><br/>
   • PC: 마우스 드래그 회전, 휠 줌<br/>
   • XR 고글: 우하단 <b>VR/AR 입장</b>, 스틱으로 이동<br/>
-  • 음성 명령 예시:<br/>
-  &nbsp;&nbsp;"지구만 보여줘", "목성", "토성"<br/>
-  &nbsp;&nbsp;"태양만", "전부 보여줘", "다 숨겨"
+  • 음성 명령 예시 (이름 말하면 가까이 날아감):<br/>
+  &nbsp;&nbsp;"지구", "목성", "토성", "태양"<br/>
+  &nbsp;&nbsp;"처음으로", "전부 보여줘", "다 숨겨"
 </div>
 
 <div id="voice">
@@ -91,6 +91,15 @@ controls.target.set(0, 1.6, -10);
 const player = new THREE.Group();
 player.add(camera);
 scene.add(player);
+
+// 시작 위치/시점 저장 (홈으로 돌아가기용)
+const HOME_CAM = camera.position.clone();
+const HOME_TARGET = controls.target.clone();
+
+// 카메라 자동 추적 상태 ─ 'earth', 'sun', 'home', 또는 null
+let followKey = null;
+// 사용자가 직접 조작하면 추적 해제
+controls.addEventListener('start', () => { followKey = null; });
 
 // ─── 텍스처 로더 (진행률 표시) ───────────────────────
 const manager = new THREE.LoadingManager();
@@ -385,11 +394,64 @@ function handleXRInput(dt) {
     const x = Math.abs(axes[2]) > 0.15 ? axes[2] : 0;
     const z = Math.abs(axes[3]) > 0.15 ? axes[3] : 0;
     if (x === 0 && z === 0) continue;
+    followKey = null; // 사용자가 스틱을 잡으면 자동 추적 해제
     camera.getWorldQuaternion(tmpQuat);
     tmpVec.set(x, 0, z).applyQuaternion(tmpQuat);
     tmpVec.y = 0;
     tmpVec.normalize().multiplyScalar(moveSpeed * dt);
     player.position.add(tmpVec);
+  }
+}
+
+// ─── 카메라 자동 비행 / 추적 ─────────────────────────
+const _camWorld = new THREE.Vector3();
+const _targetPos = new THREE.Vector3();
+const _lookAt = new THREE.Vector3();
+const _fromSun = new THREE.Vector3();
+
+function computeFollowPose(key, outTarget, outLook) {
+  if (key === 'home') {
+    outTarget.copy(HOME_CAM);
+    outLook.copy(HOME_TARGET);
+    return true;
+  }
+  if (key === 'sun') {
+    _fromSun.set(0, 0, 1); // 태양은 사방이 똑같음. 카메라 쪽으로 살짝 당김
+    outTarget.copy(sunCenter).add(_fromSun.multiplyScalar(260));
+    outTarget.y += 40;
+    outLook.copy(sunCenter);
+    return true;
+  }
+  const mesh = planetMeshes[key];
+  if (!mesh) return false;
+  // 태양 → 행성 방향(=공전 바깥쪽)에서 접근. 반지름의 ~4배 떨어진 위치.
+  _fromSun.copy(mesh.position).sub(sunCenter).normalize();
+  const dist = mesh.userData.radius * 4 + 6;
+  outTarget.copy(mesh.position).addScaledVector(_fromSun, dist);
+  outTarget.y += mesh.userData.radius * 0.8;
+  outLook.copy(mesh.position);
+  return true;
+}
+
+function updateFollow(dt) {
+  if (!followKey) return;
+  if (!computeFollowPose(followKey, _targetPos, _lookAt)) return;
+
+  // 부드럽게 따라가는 댐핑 (1초에 ~85% 좁힘)
+  const k = 1 - Math.pow(0.15, dt);
+
+  if (renderer.xr.isPresenting) {
+    // XR: player 리그를 움직여 사용자가 그 위치로 이동
+    camera.getWorldPosition(_camWorld);
+    const dx = (_targetPos.x - _camWorld.x) * k;
+    const dy = (_targetPos.y - _camWorld.y) * k;
+    const dz = (_targetPos.z - _camWorld.z) * k;
+    player.position.x += dx;
+    player.position.y += dy;
+    player.position.z += dz;
+  } else {
+    camera.position.lerp(_targetPos, k);
+    controls.target.lerp(_lookAt, k);
   }
 }
 
@@ -431,8 +493,9 @@ const PLANET_KEYWORDS = {
 
 function parseCommand(text) {
   const t = text.toLowerCase().replace(/\s+/g, '');
-  if (/(전부|모두|다보여|전체|all|everything)/.test(t)) return { kind: 'all' };
-  if (/(다숨겨|모두숨|전부숨|hideall|nothing)/.test(t)) return { kind: 'none' };
+  if (/(처음|시작위치|홈으로|리셋|reset|home)/.test(t))  return { kind: 'home' };
+  if (/(전부|모두|다보여|전체|all|everything)/.test(t))   return { kind: 'all' };
+  if (/(다숨겨|모두숨|전부숨|hideall|nothing)/.test(t))    return { kind: 'none' };
   const wanted = new Set();
   for (const [key, re] of Object.entries(PLANET_KEYWORDS)) {
     if (re.test(t)) wanted.add(key);
@@ -442,10 +505,29 @@ function parseCommand(text) {
 }
 function executeCommand(text) {
   const cmd = parseCommand(text);
-  if (cmd.kind === 'all')       { setVisibility('all');  setStatus(`✓ 전부 표시: "${text}"`); }
-  else if (cmd.kind === 'none') { setVisibility('none'); setStatus(`✓ 모두 숨김: "${text}"`); }
-  else if (cmd.kind === 'set')  { setVisibility(cmd.wanted); setStatus(`✓ 표시: ${[...cmd.wanted].join(', ')} ("${text}")`); }
-  else                          { setStatus(`? 인식 못함: "${text}"`); }
+  if (cmd.kind === 'home') {
+    followKey = 'home';
+    setVisibility('all');
+    setStatus(`🏠 시작 위치로 복귀: "${text}"`);
+  }
+  else if (cmd.kind === 'all') {
+    setVisibility('all');
+    setStatus(`✓ 전부 표시: "${text}"`);
+  }
+  else if (cmd.kind === 'none') {
+    setVisibility('none');
+    setStatus(`✓ 모두 숨김: "${text}"`);
+  }
+  else if (cmd.kind === 'set') {
+    setVisibility('all'); // 다른 행성도 보이게 (맥락 유지)
+    // 행성 한 개 → 그쪽으로 비행. 여러 개면 첫 번째로.
+    const first = [...cmd.wanted][0];
+    followKey = first;
+    setStatus(`✈ ${first} 로 이동: "${text}"`);
+  }
+  else {
+    setStatus(`? 인식 못함: "${text}"`);
+  }
 }
 if (!SR) {
   micBtn.disabled = true;
@@ -508,6 +590,7 @@ renderer.setAnimationLoop(() => {
   }
 
   handleXRInput(dt);
+  updateFollow(dt);
   controls.update();
   renderer.render(scene, camera);
 });
