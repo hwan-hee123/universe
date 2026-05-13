@@ -27,13 +27,6 @@
     background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 6px;
     font-size: 12px; max-width: 320px; text-align: right; min-height: 18px;
   }
-  #voiceSel {
-    background: rgba(0,0,0,0.6); color: #fff;
-    border: 1px solid #555; border-radius: 6px;
-    padding: 4px 8px; font-size: 11px; max-width: 260px;
-    cursor: pointer;
-  }
-  #voiceSel option { background: #111; color: #fff; }
   #settingsBtn {
     background: rgba(0,0,0,0.6); color: #fff; border: 1px solid #555;
     padding: 6px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
@@ -83,7 +76,6 @@
 <div id="voice">
   <button id="micBtn">🎙 음성 시작</button>
   <button id="settingsBtn" title="Gemini 자연 음성 설정">⚙ Gemini</button>
-  <select id="voiceSel" title="브라우저 음성 (Gemini 미설정 시 사용)"><option value="">자동 (최고 품질)</option></select>
   <div id="status">음성 인식 대기</div>
 </div>
 
@@ -744,57 +736,14 @@ function refreshVoices() {
   if (!synth) return;
   const vs = synth.getVoices();
   const koreans = vs.filter(v => v.lang && (v.lang === 'ko-KR' || v.lang.startsWith('ko')));
-
-  // 1) 사용자가 직접 고른 음성이 있으면 우선
-  const saved = localStorage.getItem('voiceName');
-  if (saved) {
-    const m = vs.find(v => v.name === saved);
-    if (m) { koVoice = m; populateVoiceSelector(koreans); return; }
-  }
-  // 2) 자동: 품질 점수가 가장 높은 한국어 음성
+  // 품질 점수가 가장 높은 한국어 음성 자동 선택
   koreans.sort((a, b) => voiceScore(b) - voiceScore(a));
   koVoice = koreans[0] || null;
-
-  populateVoiceSelector(koreans);
-}
-
-function shortVoiceName(v) {
-  let n = v.name || '(이름 없음)';
-  n = n.replace(/\s*-\s*Korean[^()]*$/i, '');
-  n = n.replace(/\s*Korean\s*\(Korea\)/i, '');
-  n = n.replace(/^Microsoft\s+/i, '');
-  return n;
-}
-
-function populateVoiceSelector(koreans) {
-  const sel = document.getElementById('voiceSel');
-  if (!sel) return;
-  const saved = localStorage.getItem('voiceName') || '';
-  sel.innerHTML = '';
-  const auto = document.createElement('option');
-  auto.value = ''; auto.textContent = '자동 (최고 품질)';
-  sel.appendChild(auto);
-  for (const v of koreans) {
-    const opt = document.createElement('option');
-    opt.value = v.name;
-    const star = voiceScore(v) >= 100 ? '★ ' : (voiceScore(v) >= 30 ? '· ' : '');
-    opt.textContent = star + shortVoiceName(v);
-    sel.appendChild(opt);
-  }
-  sel.value = saved;
 }
 
 if (synth) {
   refreshVoices();
   synth.addEventListener?.('voiceschanged', refreshVoices);
-  document.getElementById('voiceSel').addEventListener('change', (e) => {
-    const name = e.target.value;
-    if (name) localStorage.setItem('voiceName', name);
-    else      localStorage.removeItem('voiceName');
-    refreshVoices();
-    // 선택 즉시 샘플 재생
-    speak('안녕하세요. 이 목소리로 설명해 드릴게요.');
-  });
 }
 
 function speak(text) {
