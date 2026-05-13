@@ -705,8 +705,12 @@ function raDecToVec3(raHours, decDeg, r) {
   );
 }
 
-const constellationsGroup = new THREE.Group();
-constellationsGroup.visible = false; // 기본 OFF
+// 두 그룹: 별은 항상 보임 / 선·라벨은 토글
+const constellationStarsGroup = new THREE.Group();          // 항상 ON
+scene.add(constellationStarsGroup);
+
+const constellationsGroup = new THREE.Group();              // 선 + 라벨 (토글)
+constellationsGroup.visible = false;
 scene.add(constellationsGroup);
 
 const starPositions = [];
@@ -714,15 +718,13 @@ const lineSegPositions = [];
 
 for (const c of CONSTELLATIONS) {
   const starVecs = c.stars.map(s => raDecToVec3(s[0], s[1], CONST_RADIUS));
-  // 별 위치 누적
   for (const v of starVecs) starPositions.push(v.x, v.y, v.z);
-  // 선분
   for (const [a, b] of c.lines) {
     const va = starVecs[a], vb = starVecs[b];
     if (!va || !vb) continue;
     lineSegPositions.push(va.x, va.y, va.z, vb.x, vb.y, vb.z);
   }
-  // 라벨 (별들의 중심점)
+  // 라벨은 토글 그룹에
   const n = starVecs.length;
   const cx = starVecs.reduce((s, v) => s + v.x, 0) / n;
   const cy = starVecs.reduce((s, v) => s + v.y, 0) / n;
@@ -732,30 +734,35 @@ for (const c of CONSTELLATIONS) {
   constellationsGroup.add(label);
 }
 
-// 별 (Points)
+// 별 (항상 빛남). 평소엔 평범한 흰 점, 토글 ON 시엔 더 또렷한 하늘색으로 강조
 const constStarsGeo = new THREE.BufferGeometry();
 constStarsGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
 const constStarsMat = new THREE.PointsMaterial({
-  color: 0xeaf3ff, size: 9, sizeAttenuation: true,
+  color: 0xfaf6e6, size: 11, sizeAttenuation: true,
   transparent: true, opacity: 0.95, depthWrite: false,
   blending: THREE.AdditiveBlending,
 });
-constellationsGroup.add(new THREE.Points(constStarsGeo, constStarsMat));
+const constStarsPoints = new THREE.Points(constStarsGeo, constStarsMat);
+constellationStarsGroup.add(constStarsPoints);
 
-// 선
+// 선 (토글)
 const constLinesGeo = new THREE.BufferGeometry();
 constLinesGeo.setAttribute('position', new THREE.Float32BufferAttribute(lineSegPositions, 3));
 const constLinesMat = new THREE.LineBasicMaterial({
-  color: 0x7fb0e8, transparent: true, opacity: 0.45,
+  color: 0x7fb0e8, transparent: true, opacity: 0.55,
   depthWrite: false, blending: THREE.AdditiveBlending,
 });
 constellationsGroup.add(new THREE.LineSegments(constLinesGeo, constLinesMat));
 
-// 토글
+// 토글: 선·라벨만 켜고 끔. 별은 그대로 빛남.
+// 동시에 별 색을 살짝 바꿔서 "이 별들이었구나" 느낌 강조
 const constBtn = document.getElementById('constBtn');
 function setConstellations(on) {
   constellationsGroup.visible = !!on;
   constBtn.classList.toggle('active', !!on);
+  // 토글 시 별 색·크기를 살짝 강조 → 정체가 드러나는 효과
+  constStarsMat.color.setHex(on ? 0xcfe8ff : 0xfaf6e6);
+  constStarsMat.size = on ? 13 : 11;
 }
 constBtn.addEventListener('click', () => setConstellations(!constellationsGroup.visible));
 
