@@ -27,6 +27,14 @@
     background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 6px;
     font-size: 12px; max-width: 320px; text-align: right; min-height: 18px;
   }
+  #textCmd {
+    background: rgba(0,0,0,0.6); color: #fff;
+    border: 1px solid #555; border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; width: 260px;
+    outline: none;
+  }
+  #textCmd:focus { border-color: #1a73e8; }
+  #textCmd::placeholder { color: #888; }
   #voiceSel {
     background: rgba(0,0,0,0.6); color: #fff;
     border: 1px solid #555; border-radius: 6px;
@@ -96,6 +104,7 @@
   <button id="liveBtn" title="Gemini Live 실시간 음성 대화">📞 Live 대화</button>
   <button id="micBtn">🎙 음성 명령</button>
   <button id="settingsBtn" title="Gemini 자연 음성 설정">⚙ Gemini</button>
+  <input type="text" id="textCmd" placeholder="명령 입력 (예: 지구 설명)" />
   <select id="voiceSel" title="브라우저 음성 (Gemini 미설정 시 사용)"><option value="">자동 (최고 품질)</option></select>
   <div id="status">음성 인식 대기</div>
 </div>
@@ -1513,34 +1522,79 @@ function executeCommand(text) {
     setStatus(`? 인식 못함: "${text}" — 자유 질문은 📞 Live 대화로`);
   }
 }
+// Google 음성 서버 일시 장애에 대한 백오프 카운터
+let networkErrors = 0;
+const MAX_NETWORK_RETRIES = 3;
+
 if (!SR) {
   micBtn.disabled = true;
   micBtn.textContent = '음성 미지원 브라우저';
-  setStatus('Chrome/Edge에서 사용하세요');
+  setStatus('Chrome/Edge에서 사용하세요 (또는 텍스트 입력)');
 } else {
   recog = new SR();
   recog.lang = 'ko-KR';
   recog.continuous = true;
   recog.interimResults = false;
+
   recog.onresult = (e) => {
+    networkErrors = 0; // 성공 시 카운터 리셋
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) executeCommand(e.results[i][0].transcript.trim());
     }
   };
-  recog.onerror = (e) => setStatus('오류: ' + e.error);
-  recog.onend = () => {
-    if (listening) { try { recog.start(); } catch(_){} }
-    else { micBtn.classList.remove('listening'); micBtn.textContent = '🎙 음성 시작'; }
+
+  recog.onerror = (e) => {
+    console.warn('[recog] error:', e.error, e.message || '');
+    if (e.error === 'network') {
+      networkErrors++;
+      if (networkErrors >= MAX_NETWORK_RETRIES) {
+        listening = false;
+        setStatus('⚠ Google 음성 서버 연결 실패 — 아래 텍스트 입력 또는 📞 Live 대화 사용');
+      } else {
+        setStatus(`⚠ 음성 네트워크 오류 (재시도 ${networkErrors}/${MAX_NETWORK_RETRIES})…`);
+      }
+    } else if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      listening = false;
+      setStatus('⚠ 마이크 권한이 거부됨');
+    } else if (e.error === 'no-speech' || e.error === 'aborted') {
+      // 무음/사용자 중단: 조용히 처리
+    } else {
+      setStatus(`음성 인식 오류: ${e.error}`);
+    }
   };
+
+  recog.onend = () => {
+    if (!listening) {
+      micBtn.classList.remove('listening');
+      micBtn.textContent = '🎙 음성 명령';
+      return;
+    }
+    // 네트워크 오류 후엔 지수 백오프로 잠시 대기 후 재시작
+    const delay = networkErrors > 0
+      ? Math.min(1000 * Math.pow(2, networkErrors - 1), 8000)
+      : 80;
+    setTimeout(() => { if (listening) try { recog.start(); } catch(_){} }, delay);
+  };
+
   micBtn.addEventListener('click', () => {
     // Live 모드와 충돌하므로 먼저 종료
     if (live.active || live.connecting) stopLive();
     if (!listening) {
+      networkErrors = 0;
       try { recog.start(); listening = true; micBtn.classList.add('listening'); micBtn.textContent = '⏹ 음성 중지'; setStatus('듣는 중… 행성 이름을 말하세요'); }
       catch(err) { setStatus('시작 실패: ' + err.message); }
     } else { listening = false; recog.stop(); }
   });
 }
+
+// 텍스트 명령 입력 (음성 안 될 때 폴백)
+const textCmdEl = document.getElementById('textCmd');
+textCmdEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const t = textCmdEl.value.trim();
+    if (t) { executeCommand(t); textCmdEl.value = ''; }
+  }
+});
 
 // ─── 리사이즈 ────────────────────────────────────────
 addEventListener('resize', () => {
