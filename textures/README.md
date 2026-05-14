@@ -35,39 +35,11 @@ textures/
 `2k_stars_milky_way.jpg`가 있으면 우주 배경에 우리은하가 둘러싸이게 표시됩니다.
 없으면 별필드와 외부 은하 sprite만 표시되며 페이지는 정상 동작.
 
-## 외부 은하 사진 (선택, 권장)
+## 외부 은하 (절차적 입자)
 
-`textures/galaxies/` 폴더에 갤럭시 사진을 넣으면 절차적 입자 대신
-실제 사진을 sprite로 표시합니다. 첨부된 안드로메다 사진처럼
-사실적인 갤럭시 모습이 됩니다.
-
-```
-textures/galaxies/
-├── M31.jpg     ← 안드로메다 은하
-├── M33.jpg     ← 삼각형자리 은하
-├── M51.jpg     ← 소용돌이 은하
-├── M104.jpg    ← 솜브레로 은하
-├── LMC.jpg     ← 대마젤란 은하
-└── SMC.jpg     ← 소마젤란 은하
-```
-
-각 파일 약 1~2MB (1k~2k 해상도 권장).
-
-### 공개 이미지 출처
-
-NASA / ESA / Hubble / Wikipedia Commons 모두 공개 (Public Domain 또는 CC BY).
-
-직접 검색하거나 아래 페이지에서 다운로드:
-
-- **Wikipedia Commons** — 'Andromeda Galaxy', 'M51', 'M104 Sombrero' 등 검색
-  - https://commons.wikimedia.org/
-- **NASA Hubble Heritage** — https://hubblesite.org/images/gallery
-- **ESO Public Images** — https://www.eso.org/public/images/
-
-### 활성화
-
-다운받아서 위 파일명으로 폴더에 두기만 하면 자동 적용.
-파일이 없는 갤럭시는 절차적 입자(현재)로 표시됨 → 부분만 적용도 OK.
+외부 은하 6개(M31·M33·M51·M104·LMC·SMC)는 코드에서 절차적으로 생성됩니다.
+다층 입자 구조 + 색 변화(황금 핵 / 푸른 팔 / HII 분홍 영역)로 실제 사진과
+비슷한 외형을 만들어냄. 추가 파일 다운로드 불필요.
 
 지구 본체는 이미 turban/webgl-earth 4k를 CDN으로 받아오므로 별도 파일 불필요.
 

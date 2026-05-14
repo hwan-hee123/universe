@@ -1291,73 +1291,157 @@ const galaxyParticlesMat = new THREE.ShaderMaterial({
   depthWrite: false,
 });
 
-// 절차적 은하 형상 생성 (나선·핵·원반 / 불규칙)
+// 절차적 은하 형상 생성 — 사진처럼 보이게 4단 레이어 구조
+//   1) 핵 (매우 작고 밝은 황금-흰)
+//   2) 팽대부 (확장된 노랑)
+//   3) 원반 + 나선팔 (대부분 팔에 집중, 푸른별 + 핑크 HII 영역, 팔 사이는 어두운 갈색)
+//   4) 헤일로 (드물게 외곽에 흩어진 푸른빛 별)
 function generateGalaxyGeometry(g) {
   const N = g.particles;
   const positions = new Float32Array(N * 3);
   const colors = new Float32Array(N * 3);
   const sizes = new Float32Array(N);
 
-  for (let i = 0; i < N; i++) {
-    let r, angle, yOff;
+  let i = 0;
 
-    if (g.irregular) {
-      // 불규칙 은하 (LMC, SMC) — 약간 찌그러진 타원체 + 군집
-      r = Math.pow(Math.random(), 0.5) * g.radius;
-      angle = Math.random() * Math.PI * 2;
-      yOff = (Math.random() - 0.5) * g.thickness * 1.8;
-      // 약한 회전 군집
+  if (g.irregular) {
+    // 불규칙 은하 — 흩어진 노란-주황 분포 + HII 분홍 점들
+    for (; i < N; i++) {
+      const r = Math.pow(Math.random(), 0.5) * g.radius;
+      let angle = Math.random() * Math.PI * 2;
+      const yOff = (Math.random() - 0.5) * g.thickness * 1.6;
       if (Math.random() < 0.15) {
-        const clump = Math.random() * Math.PI * 2;
-        angle = clump + (Math.random() - 0.5) * 0.4;
-        r *= 0.7;
+        // 가벼운 군집
+        angle = Math.random() * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
       }
-    } else {
-      // 나선 은하
-      const isCore = Math.random() < g.coreFrac;
-      if (isCore) {
-        // 중앙 팽대부 (구형)
-        r = Math.pow(Math.random(), 2.5) * g.radius * 0.25;
-        angle = Math.random() * Math.PI * 2;
+      positions[i*3]   = Math.cos(angle) * r;
+      positions[i*3+1] = yOff;
+      positions[i*3+2] = Math.sin(angle) * r;
+
+      const isHII = Math.random() < 0.04;
+      if (isHII) {
+        colors[i*3]   = 1.0;
+        colors[i*3+1] = 0.45 + Math.random() * 0.15;
+        colors[i*3+2] = 0.65 + Math.random() * 0.15;
+        sizes[i] = 2.0 + Math.random() * 1.5;
       } else {
-        // 나선팔
-        r = Math.pow(Math.random(), 0.7) * g.radius;
-        const armIdx = Math.floor(Math.random() * g.arms);
-        const armBase = (armIdx / g.arms) * Math.PI * 2;
-        const spiral = r * g.armTwist;
-        // 팔 주변 산란 (안쪽은 좁고 바깥은 넓게)
-        const spread = 0.35 * Math.sqrt(r / g.radius);
-        const noise = (Math.random() - 0.5) * spread * Math.PI;
-        angle = armBase + spiral + noise;
+        colors[i*3]   = 0.95 + Math.random() * 0.05;
+        colors[i*3+1] = 0.82 + Math.random() * 0.13;
+        colors[i*3+2] = 0.62 + Math.random() * 0.23;
+        sizes[i] = 1.0 + Math.random() * 0.8;
       }
-      // 원반 두께 (중앙 두껍고 가장자리 얇음)
-      const tFactor = isCore ? 2.5 : Math.max(0.15, 1 - r * 0.8 / g.radius);
-      yOff = (Math.random() - 0.5) * g.thickness * tFactor;
+    }
+  } else {
+    // 나선 은하 — 4단 레이어
+
+    // (1) 핵: 매우 작고 밝은 황금-백색. 구형 팽대.
+    const coreN = Math.floor(N * 0.15);
+    const coreR = g.radius * 0.12;
+    for (let j = 0; j < coreN; j++, i++) {
+      const r = Math.pow(Math.random(), 3) * coreR;
+      const u = Math.random(), v = Math.random();
+      const theta = 2 * Math.PI * u;
+      const phi = Math.acos(2 * v - 1);
+      positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+      positions[i*3+1] = r * Math.cos(phi) * 0.55;
+      positions[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
+      const t = r / coreR;
+      colors[i*3]   = 1.0;
+      colors[i*3+1] = 1.0 - t * 0.15;
+      colors[i*3+2] = 0.85 - t * 0.25;
+      sizes[i] = 3.0 + Math.random() * 2.0;
     }
 
-    positions[i*3]   = Math.cos(angle) * r;
-    positions[i*3+1] = yOff;
-    positions[i*3+2] = Math.sin(angle) * r;
-
-    // 색: 중심 = 따뜻한 황금, 가장자리 = 푸른빛. 불규칙 은하는 따뜻한 톤만.
-    const centerness = Math.max(0, 1 - r / g.radius);
-    const cc = Math.pow(centerness, 1.5);
-    let cR, cG, cB;
-    if (g.irregular) {
-      cR = 0.95 + Math.random() * 0.05;
-      cG = 0.82 + Math.random() * 0.12;
-      cB = 0.65 + Math.random() * 0.25;
-    } else {
-      cR = 1.0 * cc + 0.7 * (1 - cc);
-      cG = 0.85 * cc + 0.85 * (1 - cc);
-      cB = 0.6 * cc + 1.0 * (1 - cc);
+    // (2) 팽대부: 황금 노랑, 코어 주변 확장
+    const bulgeN = Math.floor(N * 0.20);
+    const bulgeR = g.radius * 0.35;
+    for (let j = 0; j < bulgeN; j++, i++) {
+      const r = Math.pow(Math.random(), 1.5) * bulgeR;
+      const u = Math.random(), v = Math.random();
+      const theta = 2 * Math.PI * u;
+      const phi = Math.acos(2 * v - 1);
+      positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+      positions[i*3+1] = r * Math.cos(phi) * 0.40;
+      positions[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
+      const t = r / bulgeR;
+      colors[i*3]   = 1.0;
+      colors[i*3+1] = 0.92 - t * 0.10;
+      colors[i*3+2] = 0.65 - t * 0.12;
+      sizes[i] = 1.4 + Math.random() * 1.5;
     }
-    colors[i*3]   = cR;
-    colors[i*3+1] = cG;
-    colors[i*3+2] = cB;
 
-    // 입자 크기: 중심이 크고 밝음
-    sizes[i] = 1.5 + cc * 4.0 + Math.random() * 0.4;
+    // (3) 원반 + 나선팔: 가장 많이. 팔에 집중 + 팔 사이는 어두운 갈색.
+    const diskN = Math.floor(N * 0.55);
+    const diskRMin = bulgeR * 0.8;
+    const diskRMax = g.radius;
+    for (let j = 0; j < diskN; j++, i++) {
+      const r = diskRMin + Math.pow(Math.random(), 0.8) * (diskRMax - diskRMin);
+      const armIdx = Math.floor(Math.random() * g.arms);
+      const armBase = (armIdx / g.arms) * Math.PI * 2;
+      const spiral = r * g.armTwist;
+
+      // 75% 팔 안, 25% 팔 사이
+      const inArm = Math.random() < 0.75;
+      let angle;
+      if (inArm) {
+        const noise = (Math.random() - 0.5) * 0.25 * Math.sqrt(r / g.radius);
+        angle = armBase + spiral + noise * Math.PI;
+      } else {
+        const interOffset = Math.PI / g.arms;
+        angle = armBase + spiral + interOffset + (Math.random() - 0.5) * 0.5;
+      }
+
+      const tFactor = Math.max(0.15, 1 - r * 0.7 / g.radius);
+      const yOff = (Math.random() - 0.5) * g.thickness * tFactor;
+
+      positions[i*3]   = Math.cos(angle) * r;
+      positions[i*3+1] = yOff;
+      positions[i*3+2] = Math.sin(angle) * r;
+
+      if (inArm) {
+        const k = Math.random();
+        if (k < 0.06) {
+          // HII 영역 (분홍-빨강)
+          colors[i*3]   = 1.0;
+          colors[i*3+1] = 0.45 + Math.random() * 0.15;
+          colors[i*3+2] = 0.55 + Math.random() * 0.15;
+          sizes[i] = 2.5 + Math.random() * 1.5;
+        } else if (k < 0.35) {
+          // 푸른 거성
+          colors[i*3]   = 0.65 + Math.random() * 0.1;
+          colors[i*3+1] = 0.85 + Math.random() * 0.1;
+          colors[i*3+2] = 1.0;
+          sizes[i] = 1.5 + Math.random() * 1.2;
+        } else {
+          // 노란-흰 평범한 별
+          colors[i*3]   = 0.95;
+          colors[i*3+1] = 0.85 + Math.random() * 0.08;
+          colors[i*3+2] = 0.65 + Math.random() * 0.15;
+          sizes[i] = 0.9 + Math.random() * 0.8;
+        }
+      } else {
+        // 팔 사이 — 어두운 갈색/주황 (먼지 띠 효과)
+        colors[i*3]   = 0.55 + Math.random() * 0.15;
+        colors[i*3+1] = 0.42 + Math.random() * 0.12;
+        colors[i*3+2] = 0.32 + Math.random() * 0.10;
+        sizes[i] = 0.6 + Math.random() * 0.4;
+      }
+    }
+
+    // (4) 헤일로 — 가장자리 흩어진 푸른빛 별들
+    while (i < N) {
+      const r = g.radius * (0.95 + Math.random() * 0.25);
+      const angle = Math.random() * Math.PI * 2;
+      const yOff = (Math.random() - 0.5) * g.thickness * 0.5;
+      positions[i*3]   = Math.cos(angle) * r;
+      positions[i*3+1] = yOff;
+      positions[i*3+2] = Math.sin(angle) * r;
+      colors[i*3]   = 0.6 + Math.random() * 0.2;
+      colors[i*3+1] = 0.65 + Math.random() * 0.2;
+      colors[i*3+2] = 0.75 + Math.random() * 0.2;
+      sizes[i] = 0.6 + Math.random() * 0.4;
+      i++;
+    }
   }
 
   const geo = new THREE.BufferGeometry();
@@ -1419,35 +1503,6 @@ for (const g of EXTERNAL_GALAXIES) {
   }));
   coreSprite.scale.set(g.radius * 1.2, g.radius * 1.2, 1);
   group.add(coreSprite);
-
-  // (3) 실제 갤럭시 사진을 시도. textures/galaxies/<ID>.jpg 가 있으면 사진 sprite로 대체.
-  texLoader.load(
-    `./textures/galaxies/${g.id}.jpg`,
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = MAX_ANISO;
-      const photoSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: tex,
-        transparent: true,
-        blending: THREE.AdditiveBlending,  // 검은 배경 = 자동 투명
-        depthWrite: false,
-        opacity: 1.0,
-      }));
-      // 사진은 group 회전 영향 안 받게 group의 parent(scene)에 추가하지 않고,
-      // group 자식으로 두되 sprite는 항상 카메라를 향함 (회전 무관)
-      photoSprite.scale.set(g.radius * 3.0, g.radius * 3.0, 1);
-      group.add(photoSprite);
-      // 사진이 로드되면 절차적 입자 + 글로우 sprite를 숨김 (중복 방지)
-      particles.visible = false;
-      coreSprite.visible = false;
-      console.log(`[Galaxy] ${g.id} 사진 텍스처 로드됨`);
-    },
-    undefined,
-    () => {
-      // 사진 없음 — 절차적 입자 유지
-      console.log(`[Galaxy] ${g.id} 사진 없음 → 절차적 입자 사용`);
-    }
-  );
 
   scene.add(group);
 
