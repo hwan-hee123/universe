@@ -174,6 +174,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { XRHandModelFactory }       from 'three/addons/webxr/XRHandModelFactory.js';
 import { EffectComposer }    from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass }        from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass }   from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -197,7 +198,9 @@ renderer.xr.enabled = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
+document.body.appendChild(VRButton.createButton(renderer, {
+  optionalFeatures: ['hand-tracking', 'local-floor'],
+}));
 
 // ─── 후처리 (Bloom): 태양·밝은 별이 영화처럼 발광 ──
 // XR 모드에선 EffectComposer가 스테레오 렌더를 못 다루므로 일반 렌더러로 폴백
@@ -1543,6 +1546,281 @@ for (let i = 0; i < 2; i++) {
   grip.add(controllerFactory.createControllerModel(grip));
   player.add(grip);
 }
+
+// ─── XR 손 추적 + 제스처 ──────────────────────────────
+// 헤드셋 손 추적 가능 시 자동 활성화. 없으면 그냥 비활성 (시연 영향 없음).
+const handFactory = new XRHandModelFactory();
+const xrHands = [];
+for (let i = 0; i < 2; i++) {
+  const hand = renderer.xr.getHand(i);
+  hand.add(handFactory.createHandModel(hand, 'mesh'));
+  player.add(hand);
+  xrHands.push(hand);
+}
+// 관례: xrHands[0] = 왼손, xrHands[1] = 오른손
+
+// ── 관절 헬퍼 ──
+function getJoint(hand, name) {
+  return hand && hand.joints ? hand.joints[name] : null;
+}
+function jointDist(hand, aName, bName) {
+  const a = getJoint(hand, aName), b = getJoint(hand, bName);
+  if (!a || !b) return Infinity;
+  return a.position.distanceTo(b.position);
+}
+
+// ── 제스처 판별 ──
+function isPinch(hand) {
+  return jointDist(hand, 'thumb-tip', 'index-finger-tip') < 0.025;
+}
+function isFist(hand) {
+  if (!getJoint(hand, 'wrist')) return false;
+  for (const t of ['index-finger-tip','middle-finger-tip','ring-finger-tip','pinky-finger-tip']) {
+    if (jointDist(hand, t, 'wrist') > 0.08) return false;
+  }
+  return true;
+}
+function isIndexExtended(hand) {
+  return jointDist(hand, 'index-finger-tip', 'wrist') > 0.09;
+}
+function isThumbsUp(hand) {
+  const tip = getJoint(hand, 'thumb-tip');
+  const base = getJoint(hand, 'thumb-metacarpal');
+  const wrist = getJoint(hand, 'wrist');
+  if (!tip || !base || !wrist) return false;
+  if (tip.position.distanceTo(wrist.position) < 0.07) return false;
+  // 검지·중지 굽힘
+  if (jointDist(hand, 'index-finger-tip', 'wrist') > 0.07) return false;
+  if (jointDist(hand, 'middle-finger-tip', 'wrist') > 0.07) return false;
+  // 엄지가 위쪽 (월드 +Y)
+  const dir = new THREE.Vector3().subVectors(tip.position, base.position).normalize();
+  return dir.y > 0.5;
+}
+function isOK(hand) {
+  if (!isPinch(hand)) return false;
+  // 중지가 펴짐 → OK 사인 (핀치와 구분 핵심)
+  return jointDist(hand, 'middle-finger-tip', 'wrist') > 0.09;
+}
+function isWristWatchPose(hand) {
+  const wrist = getJoint(hand, 'wrist');
+  if (!wrist) return false;
+  const camPos = new THREE.Vector3(); camera.getWorldPosition(camPos);
+  const wp = new THREE.Vector3(); wrist.getWorldPosition(wp);
+  const dist = wp.distanceTo(camPos);
+  if (dist > 0.5 || dist < 0.1) return false;
+  // 손등 방향이 카메라 반대 (= 손바닥이 사용자 향함)
+  const back = new THREE.Vector3(0, 1, 0).applyQuaternion(wrist.quaternion);
+  const toCam = new THREE.Vector3().subVectors(camPos, wp).normalize();
+  return back.dot(toCam) < -0.2;
+}
+function getIndexRay(hand) {
+  const base = getJoint(hand, 'index-finger-metacarpal');
+  const tip = getJoint(hand, 'index-finger-tip');
+  if (!base || !tip) return null;
+  const origin = new THREE.Vector3(); base.getWorldPosition(origin);
+  const tipWorld = new THREE.Vector3(); tip.getWorldPosition(tipWorld);
+  const direction = new THREE.Vector3().subVectors(tipWorld, origin).normalize();
+  return { origin, direction };
+}
+function getHandForward(hand) {
+  const wrist = getJoint(hand, 'wrist');
+  if (!wrist) return new THREE.Vector3(0, 0, -1);
+  return new THREE.Vector3(0, 0, -1).applyQuaternion(wrist.quaternion);
+}
+
+// ── 손에서 나가는 광선 시각화 ──
+const handRays = [];
+for (let i = 0; i < 2; i++) {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)
+  ]);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+    color: 0x6699ff, transparent: true, opacity: 0.7,
+  }));
+  line.visible = false;
+  scene.add(line);
+  handRays.push(line);
+}
+
+// ── 선택 가능 객체 목록 (지연 초기화) ──
+const selectableObjects = [];
+function buildSelectables() {
+  if (selectableObjects.length > 0) return;
+  sun.userData.selKind = 'sun';
+  selectableObjects.push(sun);
+  for (const key in planetMeshes) {
+    const m = planetMeshes[key];
+    m.userData.selKind = 'planet';
+    m.userData.selKey = key;
+    selectableObjects.push(m);
+  }
+  for (const m of allMoons) {
+    m.userData.selKind = 'moon';
+    selectableObjects.push(m);
+  }
+  for (const g of galaxyGroups) {
+    for (const child of g.children) {
+      if (child.type === 'Sprite') {
+        child.userData.selKind = 'galaxy';
+        child.userData.selGroup = g;
+        selectableObjects.push(child);
+      }
+    }
+  }
+}
+
+function handleSelection(target) {
+  const kind = target.userData.selKind;
+  setVisibility('all');
+  if (kind === 'sun')    { setFollow('sun'); setStatus('👉🤏 → 태양'); }
+  else if (kind === 'planet') { setFollow(target.userData.selKey); setStatus('👉🤏 → ' + target.userData.name); }
+  else if (kind === 'moon')   { setFollowMoon(target);             setStatus('👉🤏 → ' + (target.userData.name || '위성')); }
+  else if (kind === 'galaxy') { setFollowGalaxy(target.userData.selGroup); setStatus('👉🤏 → ' + target.userData.selGroup.userData.kr); }
+}
+
+// ── 손목 메뉴 (G 제스처 시 표시) ──
+const wristMenu = new THREE.Group();
+wristMenu.visible = false;
+scene.add(wristMenu);
+{
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(15, 18, 28, 0.95)'; ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = '#6699ff'; ctx.lineWidth = 4; ctx.strokeRect(2, 2, 252, 252);
+  ctx.fillStyle = '#bcd4ff'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('🤚 손목 메뉴', 128, 36);
+  ctx.font = '15px sans-serif'; ctx.fillStyle = '#fff';
+  const lines = [
+    '👉🤏  검지 + 핀치 → 선택·비행',
+    '✊→   주먹 + 앞으로 → 비행',
+    '✌️🤏  양손 핀치 ↔ → 줌',
+    '👍    엄지 위 → 처음으로',
+    '👌    OK 사인 → 정보',
+  ];
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], 128, 80 + i * 32);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.18, 0.18),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  );
+  wristMenu.add(panel);
+}
+
+// ── 제스처 상태 ──
+const gestureState = {
+  pinchPrev: [false, false],
+  thumbsUpHold: 0,
+  thumbsUpTriggered: false,
+  okPrev: false,
+  twoHandPrevDist: null,
+  wristMenuOn: false,
+};
+
+// ── 매 프레임 제스처 처리 ──
+const _raycaster = new THREE.Raycaster();
+function processGestures(dt) {
+  if (!renderer.xr.isPresenting) {
+    // XR 아닐 땐 광선·메뉴 숨김
+    handRays[0].visible = false;
+    handRays[1].visible = false;
+    wristMenu.visible = false;
+    return;
+  }
+  buildSelectables();
+
+  const handL = xrHands[0], handR = xrHands[1];
+
+  // 각 손 광선 + 핀치 선택 (A 제스처)
+  for (let i = 0; i < 2; i++) {
+    const hand = xrHands[i];
+    const ray = getIndexRay(hand);
+    const indexExt = isIndexExtended(hand);
+    handRays[i].visible = !!(ray && indexExt);
+    if (ray && indexExt) {
+      handRays[i].position.copy(ray.origin);
+      handRays[i].lookAt(ray.origin.clone().add(ray.direction));
+      handRays[i].scale.z = 80;
+    }
+    // 핀치 시작 시점 (edge trigger)
+    const pin = isPinch(hand);
+    if (pin && !gestureState.pinchPrev[i] && ray && indexExt) {
+      _raycaster.set(ray.origin, ray.direction);
+      _raycaster.params.Line.threshold = 0.01;
+      const hits = _raycaster.intersectObjects(selectableObjects, false);
+      if (hits.length > 0) handleSelection(hits[0].object);
+    }
+    gestureState.pinchPrev[i] = pin;
+  }
+
+  // B. 주먹 → 자유 비행 (오른손)
+  if (isFist(handR)) {
+    const fwd = getHandForward(handR);
+    player.position.addScaledVector(fwd, 60 * dt);
+    // 자동 추적 해제
+    followKey = null; followLocalOffset = null;
+    followMoonMesh = null; followAim = null; followGalaxyGroup = null;
+  }
+
+  // D. 양손 핀치 + 벌리기/오므리기 → 전후 추진 (단, 양손 핀치만, OK 사인 제외)
+  if (isPinch(handL) && isPinch(handR) && !isOK(handR) && !isOK(handL)) {
+    const lp = new THREE.Vector3(); handL.getWorldPosition(lp);
+    const rp = new THREE.Vector3(); handR.getWorldPosition(rp);
+    const d = lp.distanceTo(rp);
+    if (gestureState.twoHandPrevDist !== null) {
+      const delta = d - gestureState.twoHandPrevDist;
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      player.position.addScaledVector(fwd, delta * 100);
+    }
+    gestureState.twoHandPrevDist = d;
+  } else {
+    gestureState.twoHandPrevDist = null;
+  }
+
+  // E. 엄지 업 → 처음으로 (0.5초 유지)
+  if (isThumbsUp(handR)) {
+    gestureState.thumbsUpHold += dt;
+    if (gestureState.thumbsUpHold > 0.5 && !gestureState.thumbsUpTriggered) {
+      setFollow('home');
+      gestureState.thumbsUpTriggered = true;
+      setStatus('👍 처음 위치로');
+    }
+  } else {
+    gestureState.thumbsUpHold = 0;
+    gestureState.thumbsUpTriggered = false;
+  }
+
+  // F. OK 사인 → 현재 추적 대상 정보 음성 (edge trigger)
+  const okNow = isOK(handR);
+  if (okNow && !gestureState.okPrev) {
+    let info = '';
+    if (followKey && PLANET_INFO && PLANET_INFO[followKey]) info = PLANET_INFO[followKey];
+    if (info) {
+      speakSmart(info);
+      setStatus('👌 정보 안내 중…');
+    } else {
+      setStatus('👌 (정보 데이터 없음 — 행성·태양을 선택 후 사용)');
+    }
+  }
+  gestureState.okPrev = okNow;
+
+  // G. 손목 시계 자세 → 메뉴 (왼손)
+  const wantMenu = isWristWatchPose(handL);
+  wristMenu.visible = wantMenu;
+  if (wantMenu) {
+    const wrist = getJoint(handL, 'wrist');
+    if (wrist) {
+      const wp = new THREE.Vector3(); wrist.getWorldPosition(wp);
+      wristMenu.position.copy(wp).add(new THREE.Vector3(0, 0.05, 0));
+      const camPos = new THREE.Vector3(); camera.getWorldPosition(camPos);
+      wristMenu.lookAt(camPos);
+    }
+  }
+}
+
 const moveSpeed = 60;
 const tmpQuat = new THREE.Quaternion();
 const tmpVec = new THREE.Vector3();
@@ -2365,6 +2643,7 @@ renderer.setAnimationLoop(() => {
   tickLabels();
 
   handleXRInput(dt);
+  processGestures(dt);
   updateFollow(dt);
 
   // 스카이박스 (별·별자리·우리은하 panorama) 전체를 카메라 따라가게 → 무한 배경 효과
