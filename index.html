@@ -351,10 +351,15 @@ function makeStars(count, radius, size, color) {
   });
   return new THREE.Points(geo, mat);
 }
-scene.add(makeStars(8000, 5000, 2.5, 0xffffff));
-scene.add(makeStars(3000, 4500, 4.0, 0xaaccff));
-scene.add(makeStars(1500, 4000, 5.5, 0xffd9a8));
-scene.add(makeStars(800,  3500, 7.0, 0xff9b6b));
+// 스카이박스 group: 모든 배경(별·별자리·우리은하 panorama)을 담아 매 프레임 카메라 위치로 따라감
+// → 사용자가 어디로 이동하든 별이 사방을 둘러쌈 (별이 한쪽 구체에 뭉치는 현상 해결)
+const skyboxGroup = new THREE.Group();
+scene.add(skyboxGroup);
+
+skyboxGroup.add(makeStars(8000, 5000, 2.5, 0xffffff));
+skyboxGroup.add(makeStars(3000, 4500, 4.0, 0xaaccff));
+skyboxGroup.add(makeStars(1500, 4000, 5.5, 0xffd9a8));
+skyboxGroup.add(makeStars(800,  3500, 7.0, 0xff9b6b));
 
 // ─── 라벨 ─────────────────────────────────────────────
 // 모든 라벨을 모아 매 프레임 스케일 업데이트 (카메라 거리에 비례 → 화면 크기 일정)
@@ -1118,10 +1123,10 @@ const realStarsMat = new THREE.ShaderMaterial({
 
 // 두 그룹
 const constellationStarsGroup = new THREE.Group();  // 실측 별 카탈로그 (항상 ON)
-scene.add(constellationStarsGroup);
+skyboxGroup.add(constellationStarsGroup);
 const constellationsGroup = new THREE.Group();      // 선 + 라벨 (토글)
 constellationsGroup.visible = false;
-scene.add(constellationsGroup);
+skyboxGroup.add(constellationsGroup);
 
 // 검색용 별자리 목록 (id, 한국어/영문 이름, 중심 좌표)
 const constellationItems = [];
@@ -1234,7 +1239,7 @@ const milkyWaySphere = new THREE.Mesh(
   })
 );
 milkyWaySphere.renderOrder = -10; // 가장 먼저 그려서 배경으로
-scene.add(milkyWaySphere);
+skyboxGroup.add(milkyWaySphere);
 
 texLoader.load(
   './textures/2k_stars_milky_way.jpg',
@@ -1389,17 +1394,16 @@ for (const g of EXTERNAL_GALAXIES) {
   // 원반(XZ 평면)의 법선(local +Y)을 원점 방향으로 정렬 → 접근 시 정면 보기
   const dirToOrigin = pos.clone().negate().normalize();
   group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirToOrigin);
-  // 살짝 기울여서 다양성
   group.rotateOnAxis(new THREE.Vector3(1, 0, 0), (Math.random() - 0.5) * 0.35);
   group.rotateOnAxis(new THREE.Vector3(0, 0, 1), (Math.random() - 0.5) * 0.35);
   if (g.edgeOn) group.rotateOnAxis(new THREE.Vector3(1, 0, 0), Math.PI / 2);
   group.userData = { radius: g.radius, id: g.id, kr: g.kr };
 
-  // 입자 (수만 개 별로 구성된 은하 구조)
+  // (1) 절차적 입자 — fallback. 사진 텍스처가 로드되면 숨김.
   const particles = new THREE.Points(generateGalaxyGeometry(g), galaxyParticlesMat);
   group.add(particles);
 
-  // 멀리서도 보이도록 중앙에 작은 글로우 sprite
+  // (2) 중앙 글로우 sprite — 사진 없을 때 멀리서도 보이게
   const coreCanvas = document.createElement('canvas');
   coreCanvas.width = coreCanvas.height = 256;
   const cctx = coreCanvas.getContext('2d');
@@ -1416,9 +1420,37 @@ for (const g of EXTERNAL_GALAXIES) {
   coreSprite.scale.set(g.radius * 1.2, g.radius * 1.2, 1);
   group.add(coreSprite);
 
+  // (3) 실제 갤럭시 사진을 시도. textures/galaxies/<ID>.jpg 가 있으면 사진 sprite로 대체.
+  texLoader.load(
+    `./textures/galaxies/${g.id}.jpg`,
+    (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = MAX_ANISO;
+      const photoSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        blending: THREE.AdditiveBlending,  // 검은 배경 = 자동 투명
+        depthWrite: false,
+        opacity: 1.0,
+      }));
+      // 사진은 group 회전 영향 안 받게 group의 parent(scene)에 추가하지 않고,
+      // group 자식으로 두되 sprite는 항상 카메라를 향함 (회전 무관)
+      photoSprite.scale.set(g.radius * 3.0, g.radius * 3.0, 1);
+      group.add(photoSprite);
+      // 사진이 로드되면 절차적 입자 + 글로우 sprite를 숨김 (중복 방지)
+      particles.visible = false;
+      coreSprite.visible = false;
+      console.log(`[Galaxy] ${g.id} 사진 텍스처 로드됨`);
+    },
+    undefined,
+    () => {
+      // 사진 없음 — 절차적 입자 유지
+      console.log(`[Galaxy] ${g.id} 사진 없음 → 절차적 입자 사용`);
+    }
+  );
+
   scene.add(group);
 
-  // 라벨 — group 자식으로 두면 group 회전 따라 위치 변함. 월드 좌표로 따로 배치.
   const label = makeLabel(g.kr, '#bcd4ff', { factor: 0.04, min: 30, max: 500 });
   label.position.copy(pos).add(new THREE.Vector3(0, g.radius * 0.7, 0));
   scene.add(label);
@@ -2280,9 +2312,9 @@ renderer.setAnimationLoop(() => {
   handleXRInput(dt);
   updateFollow(dt);
 
-  // 우리은하 panorama는 항상 카메라를 따라가서 무한 배경 효과
+  // 스카이박스 (별·별자리·우리은하 panorama) 전체를 카메라 따라가게 → 무한 배경 효과
   camera.getWorldPosition(_camWorld);
-  milkyWaySphere.position.copy(_camWorld);
+  skyboxGroup.position.copy(_camWorld);
   controls.update();
   // XR에선 후처리가 stereo 호환 안 되므로 일반 렌더러 사용
   if (renderer.xr.isPresenting) renderer.render(scene, camera);
