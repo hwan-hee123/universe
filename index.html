@@ -193,19 +193,20 @@
   #introScreen .spark,
   #introScreen .ring { display: none; }
 
-  /* ─── 인트로 씬 (이미지 크기 = 이미지 비율을 그대로 유지) ─── */
+  /* ─── 인트로 씬 (AI 생성 레이어 4장 = 4:3 비율) ─── */
   #introScreen .scene {
     position: absolute;
     left: 50%; top: 50%;
     transform: translate(-50%, -50%);
-    /* 1440 / 1037 ≈ 1.389 — 원본 이미지 비율 그대로 */
-    width: min(100vw, calc(100vh * 1.389));
-    aspect-ratio: 1440 / 1037;
+    /* 1168 / 880 ≈ 4:3 — AI가 생성한 레이어 비율 */
+    width: min(100vw, calc(100vh * 1.327));
+    aspect-ratio: 1168 / 880;
     pointer-events: none;
   }
-  /* 4개의 투명 PNG 레이어를 같은 무대에 겹쳐 놓고 각각 다르게 애니메이션.
-     각 이미지는 원본과 동일한 캔버스 크기를 유지하고 필요 없는 영역은
-     투명/검정으로 비워둔 형태라 inset:0 + cover/100%로 깔면 자동 정렬됨. */
+  /* 4장의 PNG 레이어를 같은 무대에 겹쳐서 각각 애니메이션.
+     모두 같은 원본 사진에서 AI로 부분 추출했기 때문에 inset:0 만으로
+     자동 정렬됨. mix-blend-mode: lighten 으로 검은 배경 픽셀이 자연스럽게
+     아래 레이어와 합성되어 사각 경계가 보이지 않음. */
   #introScreen .sprite {
     position: absolute; inset: 0;
     background-size: 100% 100%;
@@ -213,9 +214,15 @@
     background-repeat: no-repeat;
     will-change: transform, opacity;
   }
-  /* 1) 배경 + 타이틀(체브론 + ABYSS) — 정적, 항상 표시 */
+  /* 1) 배경 + 타이틀 — 정적, 항상 표시. 가장 아래라 blend 불필요 */
   #introScreen .sprite.bg-title {
     background-image: url('assets/intro_bg.png');
+  }
+  /* 손/원 레이어는 검은 배경이 위로 깔려도 bg가 비치도록 lighten blend */
+  #introScreen .sprite.left-hand,
+  #introScreen .sprite.right-hand,
+  #introScreen .sprite.rings {
+    mix-blend-mode: lighten;
   }
   /* 2) 왼쪽 와이어프레임 손 — 화면 밖에서 안쪽으로 슬라이드 */
   #introScreen .sprite.left-hand {
