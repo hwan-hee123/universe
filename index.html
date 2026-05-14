@@ -206,7 +206,7 @@ const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(innerWidth, innerHeight),
   0.85,  // strength
   0.55,  // radius
-  0.55   // threshold (낮을수록 더 많은 영역이 빛남)
+  1.0    // threshold — HDR 영역(>1.0)만 발광. 태양 텍스처 그대로 보임 + 외곽만 빛남
 );
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
