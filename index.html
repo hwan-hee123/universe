@@ -280,6 +280,51 @@ const TEX = 'https://cdn.jsdelivr.net/gh/jeromeetienne/threex.planets@master/ima
 // 지구 전용 4k 텍스처 (turban/webgl-earth, 공개)
 const TEX_EARTH = 'https://cdn.jsdelivr.net/gh/turban/webgl-earth@master/images/';
 
+// ─── 고해상도 텍스처 (Solar System Scope, CC BY 4.0) ──
+// textures/README.md 참고. 사용자가 SSS 텍스처 다운로드 후 true로 변경.
+const USE_HIRES_TEXTURES = true;
+const HIRES_DIR = './textures/';
+// threex 1k 파일명 → SSS 2k 파일명. 파일이 없으면 자동으로 1k로 폴백.
+const HIRES_MAP = {
+  'sunmap.jpg':          '2k_sun.jpg',
+  'mercurymap.jpg':      '2k_mercury.jpg',
+  'venusmap.jpg':        '2k_venus_atmosphere.jpg',
+  'marsmap1k.jpg':       '2k_mars.jpg',
+  'jupitermap.jpg':      '2k_jupiter.jpg',
+  'saturnmap.jpg':       '2k_saturn.jpg',
+  'uranusmap.jpg':       '2k_uranus.jpg',
+  'neptunemap.jpg':      '2k_neptune.jpg',
+  'saturnringcolor.jpg': '2k_saturn_ring_alpha.png',
+  'moonmap1k.jpg':       '2k_moon.jpg',
+};
+
+function resolveTexUrls(name) {
+  if (name.startsWith('http')) return { primary: name };
+  const cdn = TEX + name;
+  if (USE_HIRES_TEXTURES && HIRES_MAP[name]) {
+    return { primary: HIRES_DIR + HIRES_MAP[name], fallback: cdn };
+  }
+  return { primary: cdn };
+}
+
+// 행성 텍스처: hires 시도 → 실패 시 자동 1k 폴백
+function loadPlanetTex(name, isData = false) {
+  const { primary, fallback } = resolveTexUrls(name);
+  const t = texLoader.load(
+    primary, undefined, undefined,
+    fallback ? () => {
+      console.warn('[tex] hires 없음, 1k로 폴백:', primary);
+      texLoader.load(fallback, (loaded) => {
+        if (loaded.image) { t.image = loaded.image; t.needsUpdate = true; }
+      });
+    } : undefined
+  );
+  t.colorSpace = isData ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
+  return t;
+}
+function loadPlanetData(name) { return loadPlanetTex(name, true); }
+
 // ─── 별: 다층 별필드 ──────────────────────────────────
 function makeStars(count, radius, size, color) {
   const positions = new Float32Array(count * 3);
@@ -343,7 +388,7 @@ function makeLabel(text, color, sizeParams = { factor: 0.035, min: 3, max: 200 }
 
 // ─── 태양 ─────────────────────────────────────────────
 const sunCenter = new THREE.Vector3(0, 80, -1500);
-const sunTex = loadTex(TEX + 'sunmap.jpg');
+const sunTex = loadPlanetTex('sunmap.jpg');
 const sun = new THREE.Mesh(
   new THREE.SphereGeometry(90, 64, 64),
   new THREE.MeshBasicMaterial({ map: sunTex })
@@ -450,22 +495,19 @@ const PLANETS = [
   },
 ];
 
-// 텍스처 이름이 절대 URL이면 그대로, 상대 이름이면 TEX 베이스 붙임
-function texPath(name) { return name.startsWith('http') ? name : TEX + name; }
-
 const planetMeshes = {};
 for (const p of PLANETS) {
   const matOpts = {
-    map: loadTex(texPath(p.map)),
+    map: loadPlanetTex(p.map),
     roughness: 0.95,
     metalness: 0.0,
   };
   if (p.bump) {
-    matOpts.bumpMap = loadData(texPath(p.bump));
+    matOpts.bumpMap = loadPlanetData(p.bump);
     matOpts.bumpScale = 0.35;
   }
   if (p.spec) {
-    matOpts.roughnessMap = loadData(texPath(p.spec));
+    matOpts.roughnessMap = loadPlanetData(p.spec);
     matOpts.roughness = 0.75;
     matOpts.metalness = 0.1;
   }
@@ -485,7 +527,7 @@ for (const p of PLANETS) {
 
   // 구름 레이어 (지구)
   if (p.clouds) {
-    const cloudsTex = loadTex(texPath(p.clouds));
+    const cloudsTex = loadPlanetTex(p.clouds);
     const cloudsMat = new THREE.MeshStandardMaterial({
       map: cloudsTex,
       transparent: true,
@@ -577,7 +619,7 @@ for (const p of PLANETS) {
 
     let ringMat;
     if (p.ring.texture) {
-      const ringTex = loadTex(texPath(p.ring.texture));
+      const ringTex = loadPlanetTex(p.ring.texture);
       ringMat = new THREE.MeshBasicMaterial({
         map: ringTex, alphaMap: ringTex,
         transparent: true, side: THREE.DoubleSide, depthWrite: false,
@@ -621,8 +663,8 @@ for (const p of PLANETS) {
   for (const m of p.moons) {
     let moonMat;
     if (m.map) {
-      const opts = { map: loadTex(texPath(m.map)), roughness: 0.95, metalness: 0.0 };
-      if (m.bump) { opts.bumpMap = loadData(texPath(m.bump)); opts.bumpScale = 0.25; }
+      const opts = { map: loadPlanetTex(m.map), roughness: 0.95, metalness: 0.0 };
+      if (m.bump) { opts.bumpMap = loadPlanetData(m.bump); opts.bumpScale = 0.25; }
       moonMat = new THREE.MeshStandardMaterial(opts);
     } else {
       moonMat = new THREE.MeshStandardMaterial({
