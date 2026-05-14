@@ -188,120 +188,58 @@
     0%, 100% { opacity: 0.45; }
     50%      { opacity: 0.85; }
   }
-  #introScreen .title {
-    /* 이미지에 이미 ABYSS 타이틀이 들어있어 CSS 타이틀은 숨김 */
-    display: none;
-  }
-  #introScreen .title .chev {
-    width: 64px; height: 14px;
-    border-left: 1px solid rgba(255,255,255,0.65);
-    border-right: 1px solid rgba(255,255,255,0.65);
-    border-bottom: 1px solid rgba(255,255,255,0.65);
-    transform: perspective(60px) rotateX(35deg);
-    border-radius: 0 0 50% 50% / 0 0 100% 100%;
-  }
-  #introScreen .title h1 {
-    font-family: 'Orbitron', sans-serif;
-    font-weight: 300;
-    font-size: clamp(40px, 7vw, 92px);
-    letter-spacing: 0.55em;
-    padding-left: 0.55em;
-    color: #fff;
-    text-shadow: 0 0 18px rgba(180,210,255,0.35);
-  }
-  #introScreen .title .sub {
-    font-size: 11px; letter-spacing: 0.45em; color: rgba(255,255,255,0.55);
-    text-transform: uppercase;
-  }
-  @keyframes titleIn {
-    from { opacity: 0; transform: translateY(-12px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  /* 인트로 손 이미지 — 좌우 반으로 잘라서 안쪽으로 미끄러져 들어옴 */
-  #introScreen .scene {
-    position: absolute; inset: 0;
-    pointer-events: none;
-  }
-  #introScreen .hand-half {
-    position: absolute; inset: 0;
-    background-image: url('assets/abyss_intro.jpg');
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-    will-change: transform, opacity;
-  }
-  /* 좌측 절반만 보임 + 시작 시 더 왼쪽에 위치 */
-  #introScreen .hand-half.left {
-    clip-path: inset(0 50% 0 0);
-    opacity: 0;
-    transform: translateX(-80px);
-    animation: handLeftIn 2.4s 0.4s cubic-bezier(.22,.61,.36,1) forwards;
-  }
-  #introScreen .hand-half.right {
-    clip-path: inset(0 0 0 50%);
-    opacity: 0;
-    transform: translateX(80px);
-    animation: handRightIn 2.4s 0.4s cubic-bezier(.22,.61,.36,1) forwards;
-  }
-  @keyframes handLeftIn {
-    0%   { opacity: 0; transform: translateX(-80px); }
-    25%  { opacity: 1; }
-    100% { opacity: 1; transform: translateX(0); }
-  }
-  @keyframes handRightIn {
-    0%   { opacity: 0; transform: translateX(80px); }
-    25%  { opacity: 1; }
-    100% { opacity: 1; transform: translateX(0); }
-  }
-  /* 마지막 접근 — 손끝이 닿기 직전 살짝 더 안으로 */
-  #introScreen .hand-half.left.approach  { animation: handLeftApproach  1.4s ease-in forwards; }
-  #introScreen .hand-half.right.approach { animation: handRightApproach 1.4s ease-in forwards; }
-  @keyframes handLeftApproach {
-    from { transform: translateX(0);    }
-    to   { transform: translateX(14px); }
-  }
-  @keyframes handRightApproach {
-    from { transform: translateX(0);     }
-    to   { transform: translateX(-14px); }
-  }
-
-  /* 이미지에 이미 동심원이 그려져 있어 추가 링/스파크는 숨김 */
+  /* 사용 안 하는 옛 요소들 (HTML 호환을 위해 유지하되 숨김) */
+  #introScreen .title,
   #introScreen .spark,
   #introScreen .ring { display: none; }
 
-  /* (legacy, 사용 안 함) */
-  #introScreen .spark.__unused {
-    position: absolute; left: 50%; top: 50%;
-    width: 16px; height: 16px; border-radius: 50%;
-    transform: translate(-50%,-50%) scale(0.2);
-    background: radial-gradient(circle, #fff 0%, rgba(180,210,255,0.9) 40%, rgba(180,210,255,0) 75%);
-    box-shadow: 0 0 30px rgba(200,220,255,0.9), 0 0 80px rgba(150,180,255,0.6);
+  /* ─── 인트로 씬 (이미지 크기 = 이미지 비율을 그대로 유지) ─── */
+  #introScreen .scene {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    /* 1440 / 1037 ≈ 1.389 — 원본 이미지 비율 그대로 */
+    width: min(100vw, calc(100vh * 1.389));
+    aspect-ratio: 1440 / 1037;
+    pointer-events: none;
+  }
+  /* 같은 이미지를 클립패스로 부위별로 잘라 보여줌. */
+  /* mix-blend-mode: lighten → 검은 배경 부분이 사라져서 자연스럽게 합성됨 */
+  #introScreen .sprite {
+    position: absolute; inset: 0;
+    background: url('assets/abyss_intro.jpg') center/100% 100% no-repeat;
+    mix-blend-mode: lighten;
+    will-change: transform, opacity;
+  }
+  /* 1) 글자 + 위쪽 장식 (정적) */
+  #introScreen .sprite.title-strip {
+    clip-path: polygon(0% 0%, 100% 0%, 100% 16%, 0% 16%);
+  }
+  /* 2) 왼쪽 와이어프레임 손 — 화면 밖에서 안쪽으로 슬라이드 */
+  #introScreen .sprite.left-hand {
+    clip-path: polygon(0% 8%, 52% 8%, 52% 72%, 0% 72%);
+    transform: translateX(-55%);
+    animation: leftHandIn 2.4s 0.6s cubic-bezier(.22,.61,.36,1) forwards;
+  }
+  /* 3) 오른쪽 실루엣 손 */
+  #introScreen .sprite.right-hand {
+    clip-path: polygon(48% 40%, 100% 40%, 100% 100%, 48% 100%);
+    transform: translateX(55%);
+    animation: rightHandIn 2.4s 0.6s cubic-bezier(.22,.61,.36,1) forwards;
+  }
+  /* 4) 가운데 동심원 — 손끝이 만난 직후 페이드인 */
+  #introScreen .sprite.rings {
+    clip-path: polygon(42% 38%, 60% 38%, 60% 62%, 42% 62%);
     opacity: 0;
+    transform: scale(0.85);
+    animation: ringsIn 1.0s 2.8s cubic-bezier(.22,.61,.36,1) forwards;
   }
-  #introScreen .spark.on {
-    animation: sparkPop 1.4s ease-out forwards;
-  }
-  @keyframes sparkPop {
-    0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.2); }
-    30%  { opacity: 1; transform: translate(-50%,-50%) scale(1.0); }
-    100% { opacity: 1; transform: translate(-50%,-50%) scale(1.4); }
-  }
-  #introScreen .ring {
-    position: absolute; left: 50%; top: 50%;
-    width: 30px; height: 30px; border-radius: 50%;
-    border: 1px solid rgba(200,220,255,0.7);
-    transform: translate(-50%,-50%) scale(0.4);
-    opacity: 0;
-  }
-  #introScreen .ring.on { animation: ringExpand 1.8s ease-out forwards; }
-  #introScreen .ring.r2.on { animation-delay: 0.15s; }
-  #introScreen .ring.r3.on { animation-delay: 0.30s; }
-  #introScreen .ring.r4.on { animation-delay: 0.45s; }
-  @keyframes ringExpand {
-    0%   { opacity: 0;   transform: translate(-50%,-50%) scale(0.4); border-color: rgba(220,235,255,0.9); }
-    20%  { opacity: 0.9; }
-    100% { opacity: 0;   transform: translate(-50%,-50%) scale(10);  border-color: rgba(120,160,255,0.2); }
+  @keyframes leftHandIn  { to { transform: translateX(0); } }
+  @keyframes rightHandIn { to { transform: translateX(0); } }
+  @keyframes ringsIn {
+    0%   { opacity: 0; transform: scale(0.85); }
+    60%  { opacity: 1; transform: scale(1.06); }
+    100% { opacity: 1; transform: scale(1); }
   }
 
   /* 화이트 플래시 — 인트로 종료 직전 */
@@ -332,29 +270,21 @@
 <body>
 
 <!-- ─── ABYSS 인트로 화면 ─────────────────────────── -->
+<!-- 같은 원본 이미지를 부위별로 클립해서 여러 레이어로 깔고, -->
+<!-- 손 레이어만 양쪽 밖에서 안으로 슬라이드 → 검지가 만나면 -->
+<!-- 가운데 동심원이 페이드인 → 화이트 플래시 → 우주 씬. -->
 <div id="introScreen" aria-label="ABYSS intro">
   <div class="stars"></div>
-
-  <div class="title">
-    <div class="chev"></div>
-    <h1>ABYSS</h1>
-    <div class="sub">Touch · Connect · Explore</div>
-  </div>
-
   <div class="scene">
-    <!-- 참조 이미지를 좌우 반으로 잘라 보여줌. 각각 안쪽으로 슬라이드해서 -->
-    <!-- 가운데에서 합쳐지면 원본 이미지가 완성되고, 손끝이 닿는 효과가 됨. -->
-    <div class="hand-half left"  id="introHandLeft"></div>
-    <div class="hand-half right" id="introHandRight"></div>
-
-    <!-- 가운데 빛 -->
-    <div class="ring r1" id="introRing1"></div>
-    <div class="ring r2" id="introRing2"></div>
-    <div class="ring r3" id="introRing3"></div>
-    <div class="ring r4" id="introRing4"></div>
-    <div class="spark"   id="introSpark"></div>
+    <!-- 1. 윗부분 (장식 + ABYSS 글자) — 정적 -->
+    <div class="sprite title-strip"></div>
+    <!-- 2. 왼쪽 와이어프레임 손 — 왼쪽에서 슬라이드 인 -->
+    <div class="sprite left-hand"  id="introHandLeft"></div>
+    <!-- 3. 오른쪽 실루엣 손 — 오른쪽에서 슬라이드 인 -->
+    <div class="sprite right-hand" id="introHandRight"></div>
+    <!-- 4. 가운데 동심원 — 두 검지가 만난 직후 페이드 인 -->
+    <div class="sprite rings"      id="introRings"></div>
   </div>
-
   <div class="flash" id="introFlash"></div>
   <div class="skip">click anywhere to enter</div>
 </div>
@@ -435,18 +365,17 @@
 (function(){
   const intro = document.getElementById('introScreen');
   if (!intro) return;
-  const handL  = document.getElementById('introHandLeft');
-  const handR  = document.getElementById('introHandRight');
   const flash  = document.getElementById('introFlash');
 
   let done = false;
+  // 손 슬라이드는 CSS 애니메이션이 처리 (0.6s 지연 + 2.4s = 3.0s에 검지 만남)
+  // 동심원도 CSS가 2.8s에 페이드인 시작.
+  // JS는 마지막 플래시와 페이드아웃 타이밍만 담당.
   const TIMING = {
-    approachAt: 2400,  // 두 손이 거의 만남 (마지막 접근 시작)
-    flashAt:    4200,  // 손끝이 닿는 순간 화이트 플래시
-    endAt:      5200,  // 페이드아웃 시작
+    flashAt: 3800,  // 검지가 만난 직후 흰 플래시
+    endAt:   4900,  // 페이드아웃 시작
   };
 
-  setTimeout(() => { if (done) return; handL.classList.add('approach'); handR.classList.add('approach'); }, TIMING.approachAt);
   setTimeout(() => { if (done) return; flash.classList.add('on'); }, TIMING.flashAt);
   setTimeout(() => { if (done) return; endIntro(); }, TIMING.endAt);
 
