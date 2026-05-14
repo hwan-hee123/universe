@@ -301,33 +301,34 @@
   }
   #calibScreen[hidden] { display: none; }
   #calibScreen.fading { opacity: 0; pointer-events: none; }
-  #calibScreen .calib-bg {
-    position: absolute; inset: 0;
-    background-image: url('assets/calib_head.png');
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-    animation: calibBgPulse 4s ease-in-out infinite;
+  /* 배경 / 스캔라인 제거 — 로고와 라이브 와이어프레임만 남김 */
+  #calibScreen .calib-bg,
+  #calibScreen .scanline { display: none; }
+
+  /* ABYSS 로고 — 인트로와 같은 톤. 화면 상단 중앙 고정 */
+  #calibScreen .calib-logo {
+    position: absolute; top: 9%; left: 50%;
+    transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    font-family: 'Orbitron', sans-serif;
+    pointer-events: none;
   }
-  @keyframes calibBgPulse {
-    0%, 100% { filter: brightness(0.95); }
-    50%      { filter: brightness(1.10); }
+  #calibScreen .calib-logo .chev {
+    width: 52px; height: 11px;
+    border-left: 1px solid rgba(255,255,255,0.6);
+    border-right: 1px solid rgba(255,255,255,0.6);
+    border-bottom: 1px solid rgba(255,255,255,0.6);
+    transform: perspective(55px) rotateX(35deg);
+    border-radius: 0 0 50% 50% / 0 0 100% 100%;
   }
-  /* 부드러운 스캔 라인 — 위아래로 움직임 */
-  #calibScreen .scanline {
-    position: absolute; left: 0; right: 0; height: 4px;
-    background: linear-gradient(to bottom,
-      transparent 0%, rgba(255,170,80,0.45) 50%, transparent 100%);
-    box-shadow: 0 0 18px 4px rgba(255,170,80,0.25);
-    top: 0;
-    animation: scanlineMove 3.4s ease-in-out infinite;
-  }
-  @keyframes scanlineMove {
-    0%   { top: 5%;  opacity: 0; }
-    10%  { opacity: 1; }
-    50%  { top: 95%; opacity: 1; }
-    60%  { opacity: 0; }
-    100% { top: 95%; opacity: 0; }
+  #calibScreen .calib-logo h1 {
+    font-weight: 300;
+    font-size: clamp(26px, 4vw, 54px);
+    letter-spacing: 0.55em;
+    padding-left: 0.55em;
+    color: #fff;
+    margin: 0;
+    text-shadow: 0 0 14px rgba(180,210,255,0.35);
   }
   /* 상태 라벨 */
   #calibScreen .calib-status {
@@ -405,18 +406,20 @@
 <!-- 인트로 종료 후 자동으로 표시. HEAD MOUNT는 시뮬레이션, -->
 <!-- HAPTIC GLOVES는 MediaPipe 손 트래킹으로 실제 감지. -->
 <div id="calibScreen" hidden aria-label="System calibration">
-  <div class="calib-bg"></div>
-  <div class="scanline"></div>
-  <div class="calib-header">
-    ABYSS SYSTEM INITIALIZATION
-    <span class="small">Stand by — verifying device pairing</span>
+  <!-- ABYSS 로고만 남기고 배경 HUD 이미지/스캔라인 모두 제거 -->
+  <div class="calib-logo">
+    <div class="chev"></div>
+    <h1>ABYSS</h1>
   </div>
+
+  <!-- 라이브 와이어프레임 헤드/손은 wireRenderer 캔버스에 그려짐 (z-index로 위에 띄움) -->
+
   <div class="calib-status">
-    <div class="row">HEAD MOUNT &nbsp;·&nbsp; <span class="val ok" id="calibHeadVal">ACTIVE</span></div>
+    <div class="row">HEAD MOUNT &nbsp;·&nbsp; <span class="val scan" id="calibHeadVal">SCANNING</span></div>
     <div class="row">HAPTIC GLOVES &nbsp;·&nbsp; <span class="val scan" id="calibHandVal">SCANNING</span></div>
-    <div class="row" id="calibFinalRow"><span class="val muted" id="calibFinalVal">SYSTEM PENDING</span></div>
+    <div class="row" id="calibFinalRow"><span class="val muted" id="calibFinalVal">CLENCH FISTS · OPEN PALMS · TO ENTER</span></div>
   </div>
-  <div class="calib-skip" id="calibSkip">show hands to camera · or click to enter</div>
+  <div class="calib-skip" id="calibSkip">show hands &amp; face to camera · or click to skip</div>
 </div>
 
 <div id="info">
@@ -529,24 +532,28 @@
   function startCalibration(){
     const calib   = document.getElementById('calibScreen');
     if (!calib) return;
+    const headVal  = document.getElementById('calibHeadVal');
     const handVal  = document.getElementById('calibHandVal');
     const finalVal = document.getElementById('calibFinalVal');
     const skipEl   = document.getElementById('calibSkip');
     calib.hidden = false;
 
-    // MediaPipe 와이어프레임 캔버스가 캘리브레이션 위로 보이게 임시로 z-index 끌어올림
-    // (mpWireCanvas는 보통 z-index:40으로 UI 아래라, 9998인 calibScreen에 가려짐)
+    // 머리 와이어프레임은 이 화면에서만 보임. 메인 스크립트가 플래그 체크.
+    window.__showCalibHead = true;
+
+    // MediaPipe 와이어프레임 캔버스가 캘리브레이션 위로 보이게 z-index 끌어올림
     const bumpWireZ = () => {
       const wc = document.getElementById('mpWireCanvas');
       if (wc) { wc.style.zIndex = '9999'; wc.style.pointerEvents = 'none'; }
     };
     bumpWireZ();
-    const wireBumpInterval = setInterval(bumpWireZ, 500); // mp 시작 후 캔버스 생기는 경우 대비
+    const wireBumpInterval = setInterval(bumpWireZ, 500);
 
     let calibDone = false;
     let handsDetected = false;
+    let faceDetected = false;
 
-    // 시연용 — 2초 후 MediaPipe 자동 시작 시도 (이미 켜져 있으면 패스)
+    // 1.2초 후 MediaPipe 자동 시작 (이미 켜져 있으면 패스)
     setTimeout(() => {
       if (calibDone) return;
       const handBtn = document.getElementById('handBtn');
@@ -556,43 +563,75 @@
       }
     }, 1200);
 
-    // 메인 스크립트가 MediaPipe로 손을 처음 인식하면 window.__abyssHandSeen() 호출
+    // 손 첫 검출 시 상태 갱신 (자동 진행은 안 함)
     window.__abyssHandSeen = () => {
       if (handsDetected) return;
       handsDetected = true;
       handVal.classList.remove('scan');
       handVal.classList.add('ok');
       handVal.textContent = 'CONNECTED';
-      finalVal.classList.remove('muted');
-      finalVal.classList.add('ok');
-      finalVal.textContent = '◆ SYSTEM READY ◆';
-      skipEl.textContent = 'entering...';
-      setTimeout(endCalibration, 1400);
+      updateSkipHint();
+    };
+    // 얼굴 첫 검출 시 상태 갱신
+    window.__abyssFaceSeen = () => {
+      if (faceDetected) return;
+      faceDetected = true;
+      headVal.classList.remove('scan');
+      headVal.classList.add('ok');
+      headVal.textContent = 'ACTIVE';
+      updateSkipHint();
     };
 
-    // 10초 타임아웃 — 손 검출 실패해도 진행
-    setTimeout(() => {
-      if (calibDone || handsDetected) return;
-      handVal.classList.remove('scan');
-      handVal.classList.add('muted');
-      handVal.textContent = 'SKIPPED';
+    function updateSkipHint(){
+      if (handsDetected && faceDetected) {
+        skipEl.textContent = '✊ make fists then open both hands · or click to skip';
+      } else if (handsDetected) {
+        skipEl.textContent = 'looking for face · ✊ then open hands to enter';
+      } else if (faceDetected) {
+        skipEl.textContent = 'show hands to camera · ✊ then open to enter';
+      }
+    }
+
+    // 양손 주먹 → 폄 제스처 단계 표시
+    window.__abyssFistArmed = () => {
+      if (calibDone || !handsDetected) return;
       finalVal.classList.remove('muted');
+      finalVal.classList.add('scan');
+      finalVal.textContent = '✊ FISTS LOCKED · OPEN PALMS TO LAUNCH';
+    };
+    window.__abyssFistOpenFired = () => {
+      if (calibDone) return;
+      finalVal.classList.remove('scan', 'muted');
+      finalVal.classList.add('ok');
+      finalVal.textContent = '◆ LAUNCHING ◆';
+      skipEl.textContent = 'entering universe...';
+      setTimeout(endCalibration, 1100);
+    };
+
+    // 30초 안전망 타임아웃 — 카메라 거부나 제스처 못 잡을 때 자동 진행
+    setTimeout(() => {
+      if (calibDone) return;
+      finalVal.classList.remove('muted', 'scan');
       finalVal.textContent = '◆ ENTERING UNIVERSE ◆';
       setTimeout(endCalibration, 900);
-    }, 10000);
+    }, 30000);
 
     function endCalibration(){
       if (calibDone) return;
       calibDone = true;
+      window.__showCalibHead = false;          // 머리 와이어프레임 영구 숨김
+      window.__abyssHandSeen = null;
+      window.__abyssFaceSeen = null;
+      window.__abyssFistArmed = null;
+      window.__abyssFistOpenFired = null;
       clearInterval(wireBumpInterval);
-      // 와이어프레임 캔버스 z-index 원상복구
       const wc = document.getElementById('mpWireCanvas');
       if (wc) wc.style.zIndex = '';
       calib.classList.add('fading');
       setTimeout(() => calib.remove(), 1300);
     }
 
-    // 클릭/키보드로 캘리브레이션 스킵
+    // 클릭/키보드 스킵
     calib.addEventListener('click', endCalibration);
     window.addEventListener('keydown', function onKey(e){
       if (!calibDone && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
@@ -2690,10 +2729,16 @@ function setupWireframeView() {
 
 // MediaPipe FaceLandmarker가 준 4x4 facialTransformationMatrix를 받아
 // 와이어프레임 머리 회전에 적용. matrixData가 null이면 머리 숨김.
+// 캘리브레이션 화면에서만 보이도록 window.__showCalibHead 플래그 체크.
 function updateWireframeHead(matrixData){
   if (!wireHead) return;
-  if (!matrixData) { wireHead.visible = false; return; }
+  if (!window.__showCalibHead || !matrixData) {
+    wireHead.visible = false;
+    return;
+  }
   wireHead.visible = true;
+  // 첫 검출 시 캘리브레이션 화면에 알림
+  if (window.__abyssFaceSeen) { window.__abyssFaceSeen(); window.__abyssFaceSeen = null; }
   _headMat4.fromArray(matrixData);
   // 회전만 추출 (위치/스케일 무시 — 머리는 항상 화면 중앙)
   _headTargetQuat.setFromRotationMatrix(_headMat4);
@@ -2847,6 +2892,64 @@ function rightPinchPos(rightLm) {
   };
 }
 
+// ── 양손 주먹→폄 제스처 (calibration → universe 진입) ──
+// 각 손의 손바닥 상태를 'fist' | 'open' | 'neutral'로 분류.
+// 두 손이 동시에 fist 상태가 N프레임 지속되면 'armed', 그 뒤 'open' 상태가
+// N프레임 지속되면 fire. 한 번 발화 후엔 fire 콜백이 null되어 1회성.
+function _handGripState(lm) {
+  if (!lm) return null;
+  const wrist = lm[0];
+  const tips = [8, 12, 16, 20];
+  const mcps = [5, 9, 13, 17];
+  let curled = 0, extended = 0;
+  for (let i = 0; i < 4; i++) {
+    const t = lm[tips[i]], m = lm[mcps[i]];
+    const dT = Math.hypot(t.x - wrist.x, t.y - wrist.y);
+    const dM = Math.hypot(m.x - wrist.x, m.y - wrist.y);
+    if (dT < dM * 1.08) curled++;
+    else if (dT > dM * 1.55) extended++;
+  }
+  if (curled  >= 3) return 'fist';
+  if (extended >= 3) return 'open';
+  return 'neutral';
+}
+let _fistGestureState = 'idle';           // 'idle' | 'armed'
+let _fistStableFrames = 0;
+const _FIST_STABLE = 3;
+function checkFistOpenGesture(leftLm, rightLm) {
+  if (!leftLm || !rightLm) { _fistStableFrames = 0; return; }
+  const L = _handGripState(leftLm);
+  const R = _handGripState(rightLm);
+  if (_fistGestureState === 'idle') {
+    if (L === 'fist' && R === 'fist') {
+      if (++_fistStableFrames >= _FIST_STABLE) {
+        _fistGestureState = 'armed';
+        _fistStableFrames = 0;
+        if (window.__abyssFistArmed) window.__abyssFistArmed();
+      }
+    } else {
+      _fistStableFrames = 0;
+    }
+  } else if (_fistGestureState === 'armed') {
+    if (L === 'open' && R === 'open') {
+      if (++_fistStableFrames >= _FIST_STABLE) {
+        _fistGestureState = 'idle';
+        _fistStableFrames = 0;
+        if (window.__abyssFistOpenFired) {
+          const cb = window.__abyssFistOpenFired;
+          window.__abyssFistOpenFired = null; // one-shot
+          cb();
+        }
+      }
+    } else if (L === 'fist' && R === 'fist') {
+      _fistStableFrames = 0;        // 여전히 armed 유지, 폄 대기
+    } else {
+      // 손이 풀렸는데 완전 폄도 아닌 중간 상태 — armed 유지
+      _fistStableFrames = 0;
+    }
+  }
+}
+
 const _mpNDC = new THREE.Vector2();
 function processWebcamGestures(dt) {
   if (!mp.active || !mp.landmarker || !mp.videoEl || mp.videoEl.readyState < 2) return;
@@ -2860,8 +2963,8 @@ function processWebcamGestures(dt) {
   try { result = mp.landmarker.detectForVideo(mp.videoEl, now); }
   catch (e) { return; }
 
-  // 머리 인식 — Face landmarker로 facialTransformationMatrix 추출
-  if (mp.faceLandmarker) {
+  // 머리 인식 — 캘리브레이션 화면에서만 활성 (이후엔 CPU 절약 위해 스킵)
+  if (mp.faceLandmarker && window.__showCalibHead) {
     let faceResult = null;
     try { faceResult = mp.faceLandmarker.detectForVideo(mp.videoEl, now); }
     catch (e) {}
@@ -2871,6 +2974,8 @@ function processWebcamGestures(dt) {
     } else {
       updateWireframeHead(null);
     }
+  } else {
+    updateWireframeHead(null);    // 항상 head를 숨김 상태로 강제
   }
 
   const hands = result?.landmarks || [];
@@ -2902,6 +3007,9 @@ function processWebcamGestures(dt) {
 
   // 와이어프레임 손 시각화 (양손 모두 항상 그림)
   updateWireframeView(leftLm, rightLm, fingerMenu.mode);
+
+  // 양손 주먹 → 폄 제스처 (캘리브레이션 진입 트리거)
+  checkFistOpenGesture(leftLm, rightLm);
 
   if (!rightLm) {
     mp.cursor.hidden = true;
