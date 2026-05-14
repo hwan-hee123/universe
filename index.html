@@ -121,6 +121,14 @@
     position: absolute; top: 0; left: 0;
     width: 100%; height: 100%;
     pointer-events: none; z-index: 2;
+    display: none;  /* 2D 라벨은 와이어프레임으로 대체됨 */
+  }
+  #mpWireCanvas {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 3;  /* 비디오 위에 덮음 */
+    background: #000;
+    pointer-events: none;
   }
   #mpVideoWrap .gestureTag {
     position: absolute; top: 4px; left: 6px;
@@ -1939,6 +1947,9 @@ async function startWebcamHands() {
 
     if (!mp.landmarker) await setupMediaPipe();
 
+    // 와이어프레임 손 시각화 준비 (비디오는 가려짐)
+    setupWireframeView();
+
     mp.active = true;
     document.getElementById('handBtn').classList.add('active');
     document.getElementById('handBtn').textContent = '⏹ 손 인식 끄기';
@@ -2071,51 +2082,125 @@ const mpOverlay = document.getElementById('mpOverlay');
 const mpOctx = mpOverlay ? mpOverlay.getContext('2d') : null;
 if (mpOverlay) { mpOverlay.width = 400; mpOverlay.height = 300; }
 
-function drawFingerLabels(leftLm, currentMode) {
-  if (!mpOctx) return;
-  mpOctx.clearRect(0, 0, mpOverlay.width, mpOverlay.height);
-  if (!leftLm) return;
+// ── 와이어프레임 손 시각화 (웹캠 화면 대신 표시) ──
+// MediaPipe의 21개 관절을 3D 와이어프레임 스켈레톤으로 그림
+// 21개 점(구체) + 손가락 뼈와 손바닥 연결선
+const HAND_CONNECTIONS = [
+  // 엄지: 손목-CMC-MCP-IP-TIP
+  [0,1],[1,2],[2,3],[3,4],
+  // 검지
+  [0,5],[5,6],[6,7],[7,8],
+  // 중지
+  [5,9],[9,10],[10,11],[11,12],
+  // 약지
+  [9,13],[13,14],[14,15],[15,16],
+  // 새끼
+  [13,17],[17,18],[18,19],[19,20],
+  // 손바닥 양끝
+  [0,17],
+];
 
-  const W = mpOverlay.width, H = mpOverlay.height;
-  const fingers = [
-    { idx: 4,  code: 'A', label: 'A', desc: '선택', color: '#ff6688' },
-    { idx: 8,  code: 'D', label: 'D', desc: '줌',   color: '#66aaff' },
-    { idx: 12, code: 'B', label: 'B', desc: '비행', color: '#88ff88' },
-  ];
+let wireScene = null, wireCamera = null, wireRenderer = null;
+const wireHands = []; // [{ group, joints:[21], lines }] × 2
 
-  for (const f of fingers) {
-    const lm = leftLm[f.idx];
-    const x = (1 - lm.x) * W;  // 거울 보정
-    const y = lm.y * H;
-    const active = currentMode === f.code;
+function setupWireframeView() {
+  if (wireScene) return; // 이미 셋업됨
+  wireScene = new THREE.Scene();
+  wireCamera = new THREE.PerspectiveCamera(45, 200/150, 0.01, 10);
+  wireCamera.position.set(0, 0, 1);
+  wireCamera.lookAt(0, 0, 0);
 
-    // 활성 모드면 외곽 흰 링
-    if (active) {
-      mpOctx.strokeStyle = '#fff';
-      mpOctx.lineWidth = 3;
-      mpOctx.beginPath();
-      mpOctx.arc(x, y, 20, 0, Math.PI * 2);
-      mpOctx.stroke();
-    }
-    // 컬러 원
-    mpOctx.fillStyle = f.color;
-    mpOctx.beginPath();
-    mpOctx.arc(x, y, 15, 0, Math.PI * 2);
-    mpOctx.fill();
-    // 글자 (A/D/B)
-    mpOctx.fillStyle = '#000';
-    mpOctx.font = 'bold 14px sans-serif';
-    mpOctx.textAlign = 'center';
-    mpOctx.textBaseline = 'middle';
-    mpOctx.fillText(f.label, x, y);
-    // 설명 (선택·줌·비행)
-    mpOctx.fillStyle = '#fff';
-    mpOctx.font = 'bold 11px sans-serif';
-    mpOctx.shadowColor = 'rgba(0,0,0,0.9)';
-    mpOctx.shadowBlur = 4;
-    mpOctx.fillText(f.desc, x, y + 28);
-    mpOctx.shadowBlur = 0;
+  wireRenderer = new THREE.WebGLRenderer({ alpha: false, antialias: true });
+  wireRenderer.setClearColor(0x000000, 1);
+  wireRenderer.setSize(200, 150);
+  wireRenderer.setPixelRatio(devicePixelRatio);
+  wireRenderer.domElement.id = 'mpWireCanvas';
+  mp.videoWrap.appendChild(wireRenderer.domElement);
+
+  // 배경 점 별 (분위기용)
+  const starPositions = new Float32Array(120 * 3);
+  for (let i = 0; i < 120; i++) {
+    starPositions[i*3]   = (Math.random() - 0.5) * 2.2;
+    starPositions[i*3+1] = (Math.random() - 0.5) * 1.6;
+    starPositions[i*3+2] = -1.5 + Math.random() * 0.8;
   }
+  const starsGeo = new THREE.BufferGeometry();
+  starsGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  wireScene.add(new THREE.Points(starsGeo, new THREE.PointsMaterial({
+    color: 0xffffff, size: 0.004, transparent: true, opacity: 0.55,
+  })));
+
+  // 두 손용 스켈레톤
+  for (let h = 0; h < 2; h++) {
+    const group = new THREE.Group();
+    group.visible = false;
+    const joints = [];
+    for (let i = 0; i < 21; i++) {
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.012, 10, 10),
+        new THREE.MeshBasicMaterial({
+          color: 0xff7744, transparent: true, opacity: 0.95,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        })
+      );
+      group.add(sphere);
+      joints.push(sphere);
+    }
+    const lineGeo = new THREE.BufferGeometry();
+    const linePositions = new Float32Array(HAND_CONNECTIONS.length * 2 * 3);
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
+      color: 0xff6644, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    group.add(lines);
+    wireScene.add(group);
+    wireHands.push({ group, joints, lines });
+  }
+}
+
+function updateWireframeView(leftLm, rightLm, currentMode) {
+  if (!wireScene || !wireRenderer) return;
+  const SCALE = 0.7;
+  const hands = [leftLm, rightLm];
+  const isLeftSlot = [true, false];
+
+  for (let h = 0; h < 2; h++) {
+    const w = wireHands[h];
+    const lm = hands[h];
+    if (!lm) { w.group.visible = false; continue; }
+    w.group.visible = true;
+
+    // 관절 위치 갱신
+    for (let i = 0; i < 21; i++) {
+      const p = lm[i];
+      w.joints[i].position.set(
+        (0.5 - p.x) * SCALE,    // 거울 X
+        -(p.y - 0.5) * SCALE,
+        -p.z * SCALE,
+      );
+      // 색·크기: 왼손 검지·중지·엄지 끝은 모드별 색, 나머지·오른손은 주황
+      let color = 0xff7744, sizeMul = 1.0;
+      if (isLeftSlot[h]) {
+        if (i === 4)       { color = currentMode === 'A' ? 0xffaadd : 0xff6688; sizeMul = currentMode === 'A' ? 1.7 : 1.3; }
+        else if (i === 8)  { color = currentMode === 'D' ? 0xaaddff : 0x66aaff; sizeMul = currentMode === 'D' ? 1.7 : 1.3; }
+        else if (i === 12) { color = currentMode === 'B' ? 0xaaffaa : 0x88ff88; sizeMul = currentMode === 'B' ? 1.7 : 1.3; }
+      }
+      w.joints[i].material.color.setHex(color);
+      w.joints[i].scale.setScalar(sizeMul);
+    }
+    // 선 위치 갱신
+    const pos = w.lines.geometry.attributes.position.array;
+    for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
+      const [a, b] = HAND_CONNECTIONS[i];
+      const A = w.joints[a].position, B = w.joints[b].position;
+      pos[i*6]   = A.x; pos[i*6+1] = A.y; pos[i*6+2] = A.z;
+      pos[i*6+3] = B.x; pos[i*6+4] = B.y; pos[i*6+5] = B.z;
+    }
+    w.lines.geometry.attributes.position.needsUpdate = true;
+  }
+
+  wireRenderer.render(wireScene, wireCamera);
 }
 
 function rightPinchPos(rightLm) {
@@ -2145,7 +2230,7 @@ function processWebcamGestures(dt) {
   if (hands.length === 0) {
     mp.cursor.hidden = true;
     mp.tag.textContent = `모드: ${modeLabel(fingerMenu.mode)} — 손 없음`;
-    drawFingerLabels(null, fingerMenu.mode);
+    updateWireframeView(null, null, fingerMenu.mode);
     fingerMenu.rPinchPrev = false;
     fingerMenu.prevRightY = null;
     return;
@@ -2163,8 +2248,8 @@ function processWebcamGestures(dt) {
     else { rightLm = hands[1]; leftLm = hands[0]; }
   }
 
-  // 왼손이 보이면 항상 손가락 라벨 그림 (모드 전환 UX)
-  drawFingerLabels(leftLm, fingerMenu.mode);
+  // 와이어프레임 손 시각화 (양손 모두 항상 그림)
+  updateWireframeView(leftLm, rightLm, fingerMenu.mode);
 
   if (!rightLm) {
     mp.cursor.hidden = true;
