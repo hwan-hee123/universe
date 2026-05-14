@@ -28,8 +28,12 @@ textures/
 ├── 2k_uranus.jpg
 ├── 2k_neptune.jpg
 ├── 2k_moon.jpg                 ← 지구의 달
+├── (선택) 2k_stars_milky_way.jpg  ← 우주 배경에 우리은하 panorama
 └── (선택) 2k_earth_nightmap.jpg, 2k_earth_clouds.jpg 등
 ```
+
+`2k_stars_milky_way.jpg`가 있으면 우주 배경에 우리은하가 둘러싸이게 표시됩니다.
+없으면 별필드와 외부 은하 sprite만 표시되며 페이지는 정상 동작.
 
 지구 본체는 이미 turban/webgl-earth 4k를 CDN으로 받아오므로 별도 파일 불필요.
 

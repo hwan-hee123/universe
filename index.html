@@ -1216,6 +1216,89 @@ function setConstellations(on) {
 }
 constBtn.addEventListener('click', () => setConstellations(!constellationsGroup.visible));
 
+// ─── 우리은하 배경 + 외부 은하 ───────────────────────
+// 모든 천체 바깥에 거대 sphere로 우리은하 panorama 두르기.
+// 텍스처(textures/2k_stars_milky_way.jpg, SSS 공개)가 없으면 자동으로 숨김.
+const MILKY_WAY_RADIUS = 22000;
+const milkyWaySphere = new THREE.Mesh(
+  new THREE.SphereGeometry(MILKY_WAY_RADIUS, 64, 32),
+  new THREE.MeshBasicMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.7,
+  })
+);
+milkyWaySphere.renderOrder = -10; // 가장 먼저 그려서 배경으로
+scene.add(milkyWaySphere);
+
+texLoader.load(
+  './textures/2k_stars_milky_way.jpg',
+  (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = MAX_ANISO;
+    milkyWaySphere.material.map = tex;
+    milkyWaySphere.material.needsUpdate = true;
+    console.log('[MilkyWay] panorama 로드 완료');
+  },
+  undefined,
+  () => {
+    console.warn('[MilkyWay] 텍스처 없음. textures/2k_stars_milky_way.jpg 추가 권장.');
+    milkyWaySphere.visible = false;
+  }
+);
+
+// 외부 은하 6개 — 절차적 sprite로 표현. 정확한 적경/적위 사용.
+function makeGalaxySpriteMat(coreColor, haloColor) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+  grad.addColorStop(0,    coreColor + 'ff');
+  grad.addColorStop(0.04, coreColor + 'ee');
+  grad.addColorStop(0.18, haloColor + 'bb');
+  grad.addColorStop(0.5,  haloColor + '44');
+  grad.addColorStop(1,    haloColor + '00');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 512, 512);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.SpriteMaterial({
+    map: tex, blending: THREE.AdditiveBlending,
+    depthWrite: false, opacity: 0.9,
+  });
+}
+
+const EXTERNAL_GALAXIES = [
+  { id: 'M31',  kr: '안드로메다 은하 (M31)',  ra:  10.68, dec:  41.27, size: 1100, core: '#fff8e8', halo: '#b8c8ff' },
+  { id: 'M33',  kr: '삼각형자리 은하 (M33)',  ra:  23.46, dec:  30.66, size:  500, core: '#ffffff', halo: '#c0d4ee' },
+  { id: 'LMC',  kr: '대마젤란 은하 (LMC)',    ra:  80.89, dec: -69.76, size:  700, core: '#fff5d8', halo: '#e8d8b8' },
+  { id: 'SMC',  kr: '소마젤란 은하 (SMC)',    ra:  13.16, dec: -72.83, size:  400, core: '#fff0d0', halo: '#dad0c0' },
+  { id: 'M51',  kr: '소용돌이 은하 (M51)',    ra: 202.47, dec:  47.20, size:  450, core: '#ffffff', halo: '#a8c0ee' },
+  { id: 'M104', kr: '솜브레로 은하 (M104)',   ra: 190.00, dec: -11.62, size:  400, core: '#fff0c0', halo: '#c8b890' },
+];
+
+const GALAXY_DIST = 20000; // 우리은하 sphere 안쪽
+const galaxyItems = [];
+
+for (const g of EXTERNAL_GALAXIES) {
+  const pos = raDecToVec3(g.ra, g.dec, GALAXY_DIST);
+  const sprite = new THREE.Sprite(makeGalaxySpriteMat(g.core, g.halo));
+  sprite.scale.set(g.size, g.size, 1);
+  sprite.position.copy(pos);
+  sprite.renderOrder = -5; // 별·별자리보다 뒤, 우리은하 sphere보다 앞
+  scene.add(sprite);
+
+  const label = makeLabel(g.kr, '#bcd4ff', { factor: 0.04, min: 30, max: 500 });
+  label.position.copy(pos).add(new THREE.Vector3(0, g.size * 0.55, 0));
+  scene.add(label);
+
+  galaxyItems.push({
+    id: g.id, krName: g.kr, enName: g.id, position: pos.clone(),
+  });
+}
+
 // ─── 궤도 가이드 라인 ────────────────────────────────
 for (const p of PLANETS) {
   const segments = 128;
@@ -1875,6 +1958,22 @@ function doSearch(query) {
     }
   }
 
+  // 외부 은하
+  for (const g of galaxyItems) {
+    if (
+      g.krName.toLowerCase().includes(q) ||
+      g.enName.toLowerCase().includes(q) ||
+      /(안드로|메다|마젤|소용돌|솜브레|whirlpool|sombrero|magellan|andromeda|triangulum)/.test(q)
+    ) {
+      results.push({
+        type: 'galaxy',
+        label: g.krName,
+        sub: '외부 은하',
+        position: g.position,
+      });
+    }
+  }
+
   _searchCurrent = results.slice(0, 12);
   _searchActive  = -1;
   renderSearchResults();
@@ -1915,6 +2014,10 @@ function navigateToResult(r) {
     case 'constellation':
       setFollowAim(r.position);
       setConstellations(true);
+      setStatus(`🔍 → ${r.label} 방향`);
+      break;
+    case 'galaxy':
+      setFollowAim(r.position);
       setStatus(`🔍 → ${r.label} 방향`);
       break;
   }
