@@ -1968,40 +1968,83 @@ document.getElementById('handBtn').addEventListener('click', () => {
 });
 
 // ── MediaPipe 좌표 기반 제스처 판별 (lm = 21개 landmark 배열) ──
+// 더 엄격한 임계치 + 상호 배타적 (각 손은 한 프레임에 정확히 하나의 제스처)
 function mpPinch(lm) {
-  return Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y) < 0.06;
+  return Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y) < 0.045;
 }
 function mpFist(lm) {
-  // 모든 손가락 끝이 해당 MCP 관절보다 y가 크거나 비슷 (curled)
-  // tips: 8,12,16,20  |  mcp: 5,9,13,17
-  const w = lm[0];
-  const mcp9 = lm[9]; // middle MCP
+  const w = lm[0], mcp9 = lm[9];
   const handSize = Math.hypot(mcp9.x - w.x, mcp9.y - w.y);
   for (const i of [8, 12, 16, 20]) {
-    if (Math.hypot(lm[i].x - w.x, lm[i].y - w.y) > handSize * 1.4) return false;
+    if (Math.hypot(lm[i].x - w.x, lm[i].y - w.y) > handSize * 1.2) return false;
   }
   return true;
 }
 function mpThumbsUp(lm) {
-  // 엄지 끝이 엄지 관절(2)보다 위 (y 작음)
-  if (lm[4].y > lm[2].y - 0.03) return false;
-  // 다른 손가락 굽힘 (tip y >= pip y)
+  if (lm[4].y > lm[2].y - 0.05) return false; // 엄지 충분히 위
   for (const i of [8, 12, 16, 20]) {
-    if (lm[i].y < lm[i - 2].y - 0.01) return false;
+    if (lm[i].y < lm[i - 2].y - 0.01) return false; // 나머지 굽혀야 함
   }
   return true;
 }
 function mpOK(lm) {
   if (!mpPinch(lm)) return false;
-  // 중지·약지 펴짐 (tip y < pip y)
-  return (lm[12].y < lm[10].y - 0.02) && (lm[16].y < lm[14].y - 0.02);
+  // 중지·약지 모두 펴짐 (충분히)
+  return (lm[12].y < lm[10].y - 0.03) && (lm[16].y < lm[14].y - 0.03);
+}
+function mpAllFingersExtended(lm) {
+  return (lm[8].y < lm[6].y - 0.02)
+      && (lm[12].y < lm[10].y - 0.02)
+      && (lm[16].y < lm[14].y - 0.02)
+      && (lm[20].y < lm[18].y - 0.02);
 }
 function mpWristWatch(lm) {
-  // 손이 화면 아래쪽에 + 손가락이 위로 향함 (손목시계 보는 자세)
-  return (lm[0].y > 0.55) && (lm[12].y < lm[0].y - 0.15);
+  // 모든 손가락 펴짐 + 손이 화면 하단 중앙 (오인식 줄임)
+  if (!mpAllFingersExtended(lm)) return false;
+  if (lm[0].y < 0.55) return false;
+  if (lm[0].x < 0.25 || lm[0].x > 0.75) return false;
+  return true;
 }
 
-// ── 매 프레임 MediaPipe 처리 ──
+// 각 손은 한 프레임에 정확히 하나의 제스처로 분류 (충돌 방지)
+function classifyHand(lm) {
+  if (mpThumbsUp(lm))   return 'thumbsup';
+  if (mpFist(lm))        return 'fist';
+  if (mpOK(lm))          return 'ok';
+  if (mpPinch(lm))       return 'pinch';
+  if (mpWristWatch(lm))  return 'wristwatch';
+  return 'open';
+}
+
+// 안정성 추적 (N 프레임 연속 같은 분류일 때만 행동 발동)
+const HIST_LEN = 8;
+const STABLE_EDGE = 4;   // 일회성 동작 (pinch select, thumbs up home, OK info)
+const STABLE_CONT = 2;   // 지속 동작 (fist 비행, 양손 줌)
+const STABLE_DISP = 6;   // 표시 (손목 메뉴)
+const ACTION_COOLDOWN_MS = 700; // 같은 제스처 반복 발동 최소 간격
+const handGestureHist = [
+  { history: [], lastFire: {} },
+  { history: [], lastFire: {} },
+];
+function recordGesture(idx, g) {
+  const s = handGestureHist[idx];
+  s.history.push(g);
+  if (s.history.length > HIST_LEN) s.history.shift();
+}
+function isStable(idx, g, frames) {
+  const h = handGestureHist[idx].history;
+  if (h.length < frames) return false;
+  return h.slice(-frames).every(x => x === g);
+}
+function canFire(idx, g) {
+  const last = handGestureHist[idx].lastFire[g] || 0;
+  return performance.now() - last > ACTION_COOLDOWN_MS;
+}
+function markFired(idx, g) {
+  handGestureHist[idx].lastFire[g] = performance.now();
+}
+
+// ── 매 프레임 MediaPipe 처리 (상태 머신 + 안정성 + 상호 배타) ──
 const _mpNDC = new THREE.Vector2();
 function processWebcamGestures(dt) {
   if (!mp.active || !mp.landmarker || !mp.videoEl || mp.videoEl.readyState < 2) return;
@@ -2020,107 +2063,118 @@ function processWebcamGestures(dt) {
     mp.cursor.hidden = true;
     mp.wristMenuEl.hidden = true;
     mp.tag.textContent = '손 없음';
+    // 손 사라지면 history 비움 → 한 프레임 잘못 인식돼도 즉시 발동 안 함
+    handGestureHist[0].history.length = 0;
+    handGestureHist[1].history.length = 0;
     return;
   }
 
-  // 손 1개 (또는 첫 번째)로 커서 위치 표시
+  // 각 손 분류 + 히스토리 기록
+  const cls = [];
+  for (let i = 0; i < 2; i++) {
+    if (i < hands.length) {
+      const g = classifyHand(hands[i]);
+      recordGesture(i, g);
+      cls.push(g);
+    } else {
+      // 손 없는 슬롯은 'open'으로 채워서 양손 조건이 풀리도록
+      recordGesture(i, 'open');
+      cls.push('open');
+    }
+  }
+
+  // 커서 (손 0번 기준)
   const primary = hands[0];
-  const cursorX = (1 - primary[5].x) * innerWidth;  // 거울 보정
-  const cursorY = primary[5].y * innerHeight;
-  mp.cursor.style.left = cursorX + 'px';
-  mp.cursor.style.top = cursorY + 'px';
+  mp.cursor.style.left = (1 - primary[5].x) * innerWidth + 'px';
+  mp.cursor.style.top  = primary[5].y * innerHeight + 'px';
   mp.cursor.hidden = false;
+  mp.cursor.classList.toggle('pinching', cls[0] === 'pinch');
 
-  // 현재 감지된 제스처 표시용
-  let detected = [];
+  const tags = [];
 
-  // 각 손 핀치 검사 (edge trigger)
-  for (let i = 0; i < hands.length && i < 2; i++) {
-    const lm = hands[i];
-    const isPin = mpPinch(lm);
-    if (i === 0) mp.cursor.classList.toggle('pinching', isPin);
-
-    if (isPin && !mp.state.pinchPrev[i] && !mpOK(lm)) {
-      // A. 핀치 시작 → 화면상 손 위치로 raycast → 선택
-      const ndcX = (1 - lm[5].x) * 2 - 1;
-      const ndcY = -(lm[5].y * 2 - 1);
-      _mpNDC.set(ndcX, ndcY);
-      _raycaster.setFromCamera(_mpNDC, camera);
-      const hits = _raycaster.intersectObjects(selectableObjects, false);
-      if (hits.length > 0) handleSelection(hits[0].object);
-    }
-    mp.state.pinchPrev[i] = isPin;
-    if (isPin) detected.push('🤏');
-  }
-
-  // B. 주먹 → 카메라 전방으로 비행
-  let fistDetected = false;
-  for (const lm of hands) if (mpFist(lm)) { fistDetected = true; break; }
-  if (fistDetected) {
-    mp.state.fistFrames++;
-    if (mp.state.fistFrames > 3) { // 3프레임 연속이면 확정 (오인식 방지)
-      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-      player.position.addScaledVector(fwd, 60 * dt);
-      camera.position.addScaledVector(fwd, 60 * dt);
-      followKey = null; followLocalOffset = null;
-      followMoonMesh = null; followAim = null; followGalaxyGroup = null;
-      detected.push('✊');
-    }
-  } else {
-    mp.state.fistFrames = 0;
-  }
-
-  // D. 양손 핀치 → 거리 변화로 줌
-  if (hands.length >= 2 && mpPinch(hands[0]) && mpPinch(hands[1])
-      && !mpOK(hands[0]) && !mpOK(hands[1])) {
+  // ─── D. 양손 핀치 (최우선 — A를 막음) ───
+  const bothPinching = (cls[0] === 'pinch' && cls[1] === 'pinch')
+                    && isStable(0, 'pinch', STABLE_CONT)
+                    && isStable(1, 'pinch', STABLE_CONT);
+  if (bothPinching && hands.length >= 2) {
     const d = Math.hypot(hands[0][5].x - hands[1][5].x, hands[0][5].y - hands[1][5].y);
     if (mp.state.twoPinchPrevDist !== null) {
       const delta = d - mp.state.twoPinchPrevDist;
       const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-      const move = delta * 2000;
-      camera.position.addScaledVector(fwd, move);
+      camera.position.addScaledVector(fwd, delta * 2000);
     }
     mp.state.twoPinchPrevDist = d;
-    detected.push('✌️🤏');
+    tags.push('✌️🤏 줌');
   } else {
     mp.state.twoPinchPrevDist = null;
-  }
 
-  // E. 엄지 업 → 처음으로 (0.5초)
-  let thumbsUp = false;
-  for (const lm of hands) if (mpThumbsUp(lm)) { thumbsUp = true; break; }
-  if (thumbsUp) {
-    mp.state.thumbsUpHold += dt;
-    if (mp.state.thumbsUpHold > 0.5 && !mp.state.thumbsUpTrig) {
-      setFollow('home');
-      mp.state.thumbsUpTrig = true;
-      setStatus('👍 처음 위치로');
+    // ─── 개별 손 동작 (양손 줌이 아닐 때만) ───
+    for (let i = 0; i < hands.length && i < 2; i++) {
+      const g = cls[i];
+      const lm = hands[i];
+
+      // B. 주먹 (지속) → 카메라 전방 비행
+      if (g === 'fist' && isStable(i, 'fist', STABLE_CONT)) {
+        const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        camera.position.addScaledVector(fwd, 60 * dt);
+        followKey = null; followLocalOffset = null;
+        followMoonMesh = null; followAim = null; followGalaxyGroup = null;
+        tags.push('✊');
+        continue; // 한 손에서 다른 제스처 같이 안 잡음
+      }
+
+      // E. 엄지 업 (edge, 안정성 + 쿨다운) → 처음으로
+      if (g === 'thumbsup' && isStable(i, 'thumbsup', STABLE_EDGE) && canFire(i, 'thumbsup')) {
+        setFollow('home');
+        markFired(i, 'thumbsup');
+        setStatus('👍 처음 위치로');
+        tags.push('👍');
+        continue;
+      }
+
+      // F. OK 사인 (edge) → 정보 음성
+      if (g === 'ok' && isStable(i, 'ok', STABLE_EDGE) && canFire(i, 'ok')) {
+        let info = '';
+        if (followKey && PLANET_INFO && PLANET_INFO[followKey]) info = PLANET_INFO[followKey];
+        if (info) { speakSmart(info); setStatus('👌 정보 안내 중…'); }
+        else { setStatus('👌 행성·태양 먼저 선택'); }
+        markFired(i, 'ok');
+        tags.push('👌');
+        continue;
+      }
+
+      // A. 핀치 (edge) → 선택. 단, 이번 손이 OK 후보일 때는 잠시 대기
+      //   (현재 분류가 pinch면 OK는 자동 배제됨 — classifyHand가 OK를 먼저 체크)
+      if (g === 'pinch' && isStable(i, 'pinch', STABLE_EDGE) && canFire(i, 'pinch')) {
+        const ndcX = (1 - lm[5].x) * 2 - 1;
+        const ndcY = -(lm[5].y * 2 - 1);
+        _mpNDC.set(ndcX, ndcY);
+        _raycaster.setFromCamera(_mpNDC, camera);
+        const hits = _raycaster.intersectObjects(selectableObjects, false);
+        if (hits.length > 0) {
+          handleSelection(hits[0].object);
+          markFired(i, 'pinch');
+          tags.push('👉🤏');
+        }
+      }
     }
-    detected.push('👍');
-  } else {
-    mp.state.thumbsUpHold = 0;
-    mp.state.thumbsUpTrig = false;
   }
 
-  // F. OK → 현재 추적 대상 정보
-  let okNow = false;
-  for (const lm of hands) if (mpOK(lm)) { okNow = true; break; }
-  if (okNow && !mp.state.okPrev) {
-    let info = '';
-    if (followKey && PLANET_INFO && PLANET_INFO[followKey]) info = PLANET_INFO[followKey];
-    if (info) { speakSmart(info); setStatus('👌 정보 안내 중…'); }
-    else { setStatus('👌 행성·태양 먼저 선택'); }
+  // ─── G. 손목 시계 (display, 다른 동작 없을 때만 표시) ───
+  const anyAction = tags.length > 0;
+  let showWristMenu = false;
+  if (!anyAction) {
+    for (let i = 0; i < hands.length && i < 2; i++) {
+      if (cls[i] === 'wristwatch' && isStable(i, 'wristwatch', STABLE_DISP)) {
+        showWristMenu = true;
+        break;
+      }
+    }
   }
-  mp.state.okPrev = okNow;
-  if (okNow) detected.push('👌');
+  mp.wristMenuEl.hidden = !showWristMenu;
+  if (showWristMenu) tags.push('🤚');
 
-  // G. 손목 시계 자세 → 메뉴 오버레이
-  let wristWatch = false;
-  for (const lm of hands) if (mpWristWatch(lm)) { wristWatch = true; break; }
-  mp.wristMenuEl.hidden = !wristWatch;
-  if (wristWatch) detected.push('🤚');
-
-  mp.tag.textContent = detected.length > 0 ? detected.join(' ') : '대기';
+  mp.tag.textContent = tags.length > 0 ? tags.join(' ') : '대기';
 }
 
 const moveSpeed = 60;
