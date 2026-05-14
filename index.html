@@ -306,29 +306,6 @@ scene.add(makeStars(3000, 4500, 4.0, 0xaaccff));
 scene.add(makeStars(1500, 4000, 5.5, 0xffd9a8));
 scene.add(makeStars(800,  3500, 7.0, 0xff9b6b));
 
-// ─── 성운 ─────────────────────────────────────────────
-function makeNebula(color, size, position) {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createRadialGradient(128,128,0, 128,128,128);
-  grad.addColorStop(0, color + 'ff');
-  grad.addColorStop(0.4, color + '55');
-  grad.addColorStop(1, color + '00');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,256,256);
-  const tex = new THREE.CanvasTexture(canvas);
-  const mat = new THREE.SpriteMaterial({ map: tex, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.65 });
-  const sp = new THREE.Sprite(mat);
-  sp.scale.set(size, size, 1);
-  sp.position.copy(position);
-  return sp;
-}
-scene.add(makeNebula('#5566ff', 1500, new THREE.Vector3(-1500,  400, -2500)));
-scene.add(makeNebula('#ff4488', 1200, new THREE.Vector3( 1800, -500, -2200)));
-scene.add(makeNebula('#aa66ff', 1100, new THREE.Vector3( 400, 1300, -3000)));
-scene.add(makeNebula('#44ddff', 1000, new THREE.Vector3(-900, -900, -1800)));
-
 // ─── 라벨 ─────────────────────────────────────────────
 // 모든 라벨을 모아 매 프레임 스케일 업데이트 (카메라 거리에 비례 → 화면 크기 일정)
 const allLabels = [];
@@ -374,22 +351,7 @@ const sun = new THREE.Mesh(
 sun.position.copy(sunCenter);
 scene.add(sun);
 
-// 태양 글로우
-const glowCanvas = document.createElement('canvas');
-glowCanvas.width = glowCanvas.height = 256;
-const gctx = glowCanvas.getContext('2d');
-const gg = gctx.createRadialGradient(128,128,0, 128,128,128);
-gg.addColorStop(0, 'rgba(255,220,120,1)');
-gg.addColorStop(0.3, 'rgba(255,180,60,0.5)');
-gg.addColorStop(1, 'rgba(255,140,40,0)');
-gctx.fillStyle = gg; gctx.fillRect(0,0,256,256);
-const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-  map: new THREE.CanvasTexture(glowCanvas),
-  blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.9
-}));
-sunGlow.scale.set(400, 400, 1);
-sunGlow.position.copy(sunCenter);
-scene.add(sunGlow);
+// (구) 태양 글로우 스프라이트는 제거. Bloom 후처리가 자연스러운 발광을 처리함.
 
 const sunLabel = makeLabel('태양 (Sun)', '#ffd97a', { factor: 0.045, min: 8, max: 300 });
 sunLabel.position.set(sunCenter.x, sunCenter.y + 130, sunCenter.z);
@@ -1357,7 +1319,7 @@ function updateFollow(dt) {
 
 // ─── 가시성 제어 ─────────────────────────────────────
 function getTargetObjs(key) {
-  if (key === 'sun') return [sun, sunGlow, sunLabel];
+  if (key === 'sun') return [sun, sunLabel];
   const m = planetMeshes[key];
   if (!m) return [];
   const objs = [m, m.userData.label];
@@ -1956,7 +1918,6 @@ renderer.setAnimationLoop(() => {
   const t  = clock.elapsedTime;
 
   sun.rotation.y += dt * 0.05;
-  sunGlow.material.opacity = 0.85 + Math.sin(t * 0.8) * 0.08;
 
   for (const p of PLANETS) {
     const mesh = planetMeshes[p.key];
