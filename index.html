@@ -203,43 +203,56 @@
     aspect-ratio: 1440 / 1037;
     pointer-events: none;
   }
-  /* 같은 이미지를 클립패스로 부위별로 잘라 보여줌. */
-  /* mix-blend-mode: lighten → 검은 배경 부분이 사라져서 자연스럽게 합성됨 */
+  /* 4개의 투명 PNG 레이어를 같은 무대에 겹쳐 놓고 각각 다르게 애니메이션.
+     각 이미지는 원본과 동일한 캔버스 크기를 유지하고 필요 없는 영역은
+     투명/검정으로 비워둔 형태라 inset:0 + cover/100%로 깔면 자동 정렬됨. */
   #introScreen .sprite {
     position: absolute; inset: 0;
-    background: url('assets/abyss_intro.jpg') center/100% 100% no-repeat;
-    mix-blend-mode: lighten;
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
     will-change: transform, opacity;
   }
-  /* 1) 글자 + 위쪽 장식 (정적) */
-  #introScreen .sprite.title-strip {
-    clip-path: polygon(0% 0%, 100% 0%, 100% 16%, 0% 16%);
+  /* 1) 배경 + 타이틀(체브론 + ABYSS) — 정적, 항상 표시 */
+  #introScreen .sprite.bg-title {
+    background-image: url('assets/intro_bg.png');
   }
   /* 2) 왼쪽 와이어프레임 손 — 화면 밖에서 안쪽으로 슬라이드 */
   #introScreen .sprite.left-hand {
-    clip-path: polygon(0% 8%, 52% 8%, 52% 72%, 0% 72%);
-    transform: translateX(-55%);
+    background-image: url('assets/intro_hand_left.png');
+    opacity: 0;
+    transform: translateX(-110%);
     animation: leftHandIn 2.4s 0.6s cubic-bezier(.22,.61,.36,1) forwards;
   }
-  /* 3) 오른쪽 실루엣 손 */
+  /* 3) 오른쪽 실루엣 손 — 반대편에서 슬라이드 */
   #introScreen .sprite.right-hand {
-    clip-path: polygon(48% 40%, 100% 40%, 100% 100%, 48% 100%);
-    transform: translateX(55%);
+    background-image: url('assets/intro_hand_right.png');
+    opacity: 0;
+    transform: translateX(110%);
     animation: rightHandIn 2.4s 0.6s cubic-bezier(.22,.61,.36,1) forwards;
   }
-  /* 4) 가운데 동심원 — 손끝이 만난 직후 페이드인 */
+  /* 4) 가운데 동심원 — 손끝이 만난 직후 페이드인 + 살짝 확대 */
   #introScreen .sprite.rings {
-    clip-path: polygon(42% 38%, 60% 38%, 60% 62%, 42% 62%);
+    background-image: url('assets/intro_rings.png');
     opacity: 0;
     transform: scale(0.85);
-    animation: ringsIn 1.0s 2.8s cubic-bezier(.22,.61,.36,1) forwards;
+    transform-origin: 50% 50%;
+    animation: ringsIn 1.1s 2.8s cubic-bezier(.22,.61,.36,1) forwards;
   }
-  @keyframes leftHandIn  { to { transform: translateX(0); } }
-  @keyframes rightHandIn { to { transform: translateX(0); } }
+  @keyframes leftHandIn {
+    0%   { opacity: 0; transform: translateX(-110%); }
+    20%  { opacity: 1; }
+    100% { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes rightHandIn {
+    0%   { opacity: 0; transform: translateX(110%); }
+    20%  { opacity: 1; }
+    100% { opacity: 1; transform: translateX(0); }
+  }
   @keyframes ringsIn {
     0%   { opacity: 0; transform: scale(0.85); }
-    60%  { opacity: 1; transform: scale(1.06); }
-    100% { opacity: 1; transform: scale(1); }
+    60%  { opacity: 1; transform: scale(1.08); }
+    100% { opacity: 1; transform: scale(1.0); }
   }
 
   /* 화이트 플래시 — 인트로 종료 직전 */
@@ -276,11 +289,11 @@
 <div id="introScreen" aria-label="ABYSS intro">
   <div class="stars"></div>
   <div class="scene">
-    <!-- 1. 윗부분 (장식 + ABYSS 글자) — 정적 -->
-    <div class="sprite title-strip"></div>
-    <!-- 2. 왼쪽 와이어프레임 손 — 왼쪽에서 슬라이드 인 -->
+    <!-- 1. 배경 + 타이틀 (체브론 + ABYSS) — 정적, 항상 보임 -->
+    <div class="sprite bg-title"></div>
+    <!-- 2. 왼쪽 와이어프레임 손 — 왼쪽 밖에서 슬라이드 인 -->
     <div class="sprite left-hand"  id="introHandLeft"></div>
-    <!-- 3. 오른쪽 실루엣 손 — 오른쪽에서 슬라이드 인 -->
+    <!-- 3. 오른쪽 실루엣 손 — 오른쪽 밖에서 슬라이드 인 -->
     <div class="sprite right-hand" id="introHandRight"></div>
     <!-- 4. 가운데 동심원 — 두 검지가 만난 직후 페이드 인 -->
     <div class="sprite rings"      id="introRings"></div>
