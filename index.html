@@ -101,6 +101,48 @@
   #searchResults .empty {
     padding: 14px; text-align: center; color: #888; font-size: 12px;
   }
+  #handBtn {
+    background: rgba(0,0,0,0.6); color: #fff; border: 1px solid #555;
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  }
+  #handBtn.active { background: #34a853; border-color: #34a853; }
+  #mpVideoWrap {
+    position: fixed; bottom: 12px; right: 12px; z-index: 100;
+    width: 200px; height: 150px; border-radius: 8px;
+    border: 2px solid #34a853; overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,.5);
+  }
+  #mpVideoWrap[hidden] { display: none; }
+  #mpVideoWrap video {
+    width: 100%; height: 100%; object-fit: cover;
+    transform: scaleX(-1);  /* 거울 모드 */
+  }
+  #mpVideoWrap .gestureTag {
+    position: absolute; top: 4px; left: 6px;
+    background: rgba(0,0,0,0.7); color: #fff;
+    font-size: 11px; padding: 2px 6px; border-radius: 4px;
+  }
+  #handCursor {
+    position: fixed; width: 32px; height: 32px;
+    border: 3px solid #34a853; border-radius: 50%;
+    pointer-events: none; z-index: 50;
+    transform: translate(-50%, -50%);
+    transition: width 0.1s, height 0.1s, background 0.1s;
+  }
+  #handCursor[hidden] { display: none; }
+  #handCursor.pinching {
+    background: rgba(52, 168, 83, 0.7);
+    width: 20px; height: 20px;
+  }
+  #mpWristMenu {
+    position: fixed; bottom: 180px; right: 12px; z-index: 60;
+    width: 220px;
+    background: rgba(15,18,28,0.95); color: #fff;
+    border: 1px solid #34a853; border-radius: 8px;
+    padding: 10px 12px; font-size: 12px;
+  }
+  #mpWristMenu[hidden] { display: none; }
+  #mpWristMenu .row { padding: 4px 0; }
 </style>
 </head>
 <body>
@@ -118,8 +160,22 @@
 <div id="voice">
   <button id="micBtn">🎙 음성 시작</button>
   <button id="constBtn" title="별자리 켜기/끄기">✨ 별자리</button>
+  <button id="handBtn" title="웹캠으로 손 제스처 인식 (MediaPipe)">📷 손 인식</button>
   <button id="settingsBtn" title="Gemini 자연 음성 설정">⚙ Gemini</button>
   <div id="status">음성 인식 대기</div>
+</div>
+
+<div id="mpVideoWrap" hidden>
+  <span class="gestureTag" id="mpGestureTag">대기</span>
+</div>
+<div id="handCursor" hidden></div>
+<div id="mpWristMenu" hidden>
+  <div class="row"><b>🤚 손목 메뉴</b></div>
+  <div class="row">👉🤏 검지+핀치 → 선택</div>
+  <div class="row">✊→ 주먹 → 비행</div>
+  <div class="row">✌️🤏 양손 핀치 → 줌</div>
+  <div class="row">👍 엄지업 → 처음으로</div>
+  <div class="row">👌 OK → 정보 음성</div>
 </div>
 
 <div id="settingsPanel" hidden>
@@ -1821,6 +1877,252 @@ function processGestures(dt) {
   }
 }
 
+// ─── 노트북 웹캠 손 인식 (MediaPipe Hands) ────────────
+// 헤드셋 없이도 같은 6개 제스처를 카메라로 감지. 시연용.
+const mp = {
+  active: false,
+  landmarker: null,
+  videoEl: null,
+  stream: null,
+  lastVideoTime: -1,
+  cursor: document.getElementById('handCursor'),
+  videoWrap: document.getElementById('mpVideoWrap'),
+  tag: document.getElementById('mpGestureTag'),
+  wristMenuEl: document.getElementById('mpWristMenu'),
+  state: {
+    pinchPrev: [false, false],
+    thumbsUpHold: 0,
+    thumbsUpTrig: false,
+    okPrev: false,
+    twoPinchPrevDist: null,
+    fistFrames: 0,
+  },
+};
+
+// MediaPipe 동적 import + 초기화
+async function setupMediaPipe() {
+  setStatus('📷 손 인식 모델 로딩 중…');
+  const { HandLandmarker, FilesetResolver } =
+    await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm');
+  const vision = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm'
+  );
+  mp.landmarker = await HandLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      delegate: 'GPU',
+    },
+    runningMode: 'VIDEO',
+    numHands: 2,
+  });
+}
+
+async function startWebcamHands() {
+  try {
+    mp.stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480 }, audio: false,
+    });
+    const video = document.createElement('video');
+    video.srcObject = mp.stream;
+    video.autoplay = true; video.playsInline = true;
+    mp.videoWrap.appendChild(video);
+    mp.videoEl = video;
+    mp.videoWrap.hidden = false;
+    await new Promise((r) => video.onloadedmetadata = r);
+
+    if (!mp.landmarker) await setupMediaPipe();
+
+    mp.active = true;
+    document.getElementById('handBtn').classList.add('active');
+    document.getElementById('handBtn').textContent = '⏹ 손 인식 끄기';
+    setStatus('📷 손 인식 활성 — 웹캠 앞에 손을 보여주세요');
+  } catch (e) {
+    console.error(e);
+    setStatus('⚠ 손 인식 실패: ' + e.message);
+    stopWebcamHands();
+  }
+}
+
+function stopWebcamHands() {
+  mp.active = false;
+  if (mp.stream) {
+    mp.stream.getTracks().forEach(t => t.stop());
+    mp.stream = null;
+  }
+  if (mp.videoEl) {
+    mp.videoEl.remove();
+    mp.videoEl = null;
+  }
+  mp.videoWrap.hidden = true;
+  mp.cursor.hidden = true;
+  mp.wristMenuEl.hidden = true;
+  document.getElementById('handBtn').classList.remove('active');
+  document.getElementById('handBtn').textContent = '📷 손 인식';
+  setStatus('📷 손 인식 비활성');
+}
+
+document.getElementById('handBtn').addEventListener('click', () => {
+  if (mp.active) stopWebcamHands();
+  else startWebcamHands();
+});
+
+// ── MediaPipe 좌표 기반 제스처 판별 (lm = 21개 landmark 배열) ──
+function mpPinch(lm) {
+  return Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y) < 0.06;
+}
+function mpFist(lm) {
+  // 모든 손가락 끝이 해당 MCP 관절보다 y가 크거나 비슷 (curled)
+  // tips: 8,12,16,20  |  mcp: 5,9,13,17
+  const w = lm[0];
+  const mcp9 = lm[9]; // middle MCP
+  const handSize = Math.hypot(mcp9.x - w.x, mcp9.y - w.y);
+  for (const i of [8, 12, 16, 20]) {
+    if (Math.hypot(lm[i].x - w.x, lm[i].y - w.y) > handSize * 1.4) return false;
+  }
+  return true;
+}
+function mpThumbsUp(lm) {
+  // 엄지 끝이 엄지 관절(2)보다 위 (y 작음)
+  if (lm[4].y > lm[2].y - 0.03) return false;
+  // 다른 손가락 굽힘 (tip y >= pip y)
+  for (const i of [8, 12, 16, 20]) {
+    if (lm[i].y < lm[i - 2].y - 0.01) return false;
+  }
+  return true;
+}
+function mpOK(lm) {
+  if (!mpPinch(lm)) return false;
+  // 중지·약지 펴짐 (tip y < pip y)
+  return (lm[12].y < lm[10].y - 0.02) && (lm[16].y < lm[14].y - 0.02);
+}
+function mpWristWatch(lm) {
+  // 손이 화면 아래쪽에 + 손가락이 위로 향함 (손목시계 보는 자세)
+  return (lm[0].y > 0.55) && (lm[12].y < lm[0].y - 0.15);
+}
+
+// ── 매 프레임 MediaPipe 처리 ──
+const _mpNDC = new THREE.Vector2();
+function processWebcamGestures(dt) {
+  if (!mp.active || !mp.landmarker || !mp.videoEl || mp.videoEl.readyState < 2) return;
+  buildSelectables();
+
+  const now = performance.now();
+  if (now === mp.lastVideoTime) return;
+  mp.lastVideoTime = now;
+
+  let result;
+  try { result = mp.landmarker.detectForVideo(mp.videoEl, now); }
+  catch (e) { return; }
+
+  const hands = result?.landmarks || [];
+  if (hands.length === 0) {
+    mp.cursor.hidden = true;
+    mp.wristMenuEl.hidden = true;
+    mp.tag.textContent = '손 없음';
+    return;
+  }
+
+  // 손 1개 (또는 첫 번째)로 커서 위치 표시
+  const primary = hands[0];
+  const cursorX = (1 - primary[5].x) * innerWidth;  // 거울 보정
+  const cursorY = primary[5].y * innerHeight;
+  mp.cursor.style.left = cursorX + 'px';
+  mp.cursor.style.top = cursorY + 'px';
+  mp.cursor.hidden = false;
+
+  // 현재 감지된 제스처 표시용
+  let detected = [];
+
+  // 각 손 핀치 검사 (edge trigger)
+  for (let i = 0; i < hands.length && i < 2; i++) {
+    const lm = hands[i];
+    const isPin = mpPinch(lm);
+    if (i === 0) mp.cursor.classList.toggle('pinching', isPin);
+
+    if (isPin && !mp.state.pinchPrev[i] && !mpOK(lm)) {
+      // A. 핀치 시작 → 화면상 손 위치로 raycast → 선택
+      const ndcX = (1 - lm[5].x) * 2 - 1;
+      const ndcY = -(lm[5].y * 2 - 1);
+      _mpNDC.set(ndcX, ndcY);
+      _raycaster.setFromCamera(_mpNDC, camera);
+      const hits = _raycaster.intersectObjects(selectableObjects, false);
+      if (hits.length > 0) handleSelection(hits[0].object);
+    }
+    mp.state.pinchPrev[i] = isPin;
+    if (isPin) detected.push('🤏');
+  }
+
+  // B. 주먹 → 카메라 전방으로 비행
+  let fistDetected = false;
+  for (const lm of hands) if (mpFist(lm)) { fistDetected = true; break; }
+  if (fistDetected) {
+    mp.state.fistFrames++;
+    if (mp.state.fistFrames > 3) { // 3프레임 연속이면 확정 (오인식 방지)
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      player.position.addScaledVector(fwd, 60 * dt);
+      camera.position.addScaledVector(fwd, 60 * dt);
+      followKey = null; followLocalOffset = null;
+      followMoonMesh = null; followAim = null; followGalaxyGroup = null;
+      detected.push('✊');
+    }
+  } else {
+    mp.state.fistFrames = 0;
+  }
+
+  // D. 양손 핀치 → 거리 변화로 줌
+  if (hands.length >= 2 && mpPinch(hands[0]) && mpPinch(hands[1])
+      && !mpOK(hands[0]) && !mpOK(hands[1])) {
+    const d = Math.hypot(hands[0][5].x - hands[1][5].x, hands[0][5].y - hands[1][5].y);
+    if (mp.state.twoPinchPrevDist !== null) {
+      const delta = d - mp.state.twoPinchPrevDist;
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      const move = delta * 2000;
+      camera.position.addScaledVector(fwd, move);
+    }
+    mp.state.twoPinchPrevDist = d;
+    detected.push('✌️🤏');
+  } else {
+    mp.state.twoPinchPrevDist = null;
+  }
+
+  // E. 엄지 업 → 처음으로 (0.5초)
+  let thumbsUp = false;
+  for (const lm of hands) if (mpThumbsUp(lm)) { thumbsUp = true; break; }
+  if (thumbsUp) {
+    mp.state.thumbsUpHold += dt;
+    if (mp.state.thumbsUpHold > 0.5 && !mp.state.thumbsUpTrig) {
+      setFollow('home');
+      mp.state.thumbsUpTrig = true;
+      setStatus('👍 처음 위치로');
+    }
+    detected.push('👍');
+  } else {
+    mp.state.thumbsUpHold = 0;
+    mp.state.thumbsUpTrig = false;
+  }
+
+  // F. OK → 현재 추적 대상 정보
+  let okNow = false;
+  for (const lm of hands) if (mpOK(lm)) { okNow = true; break; }
+  if (okNow && !mp.state.okPrev) {
+    let info = '';
+    if (followKey && PLANET_INFO && PLANET_INFO[followKey]) info = PLANET_INFO[followKey];
+    if (info) { speakSmart(info); setStatus('👌 정보 안내 중…'); }
+    else { setStatus('👌 행성·태양 먼저 선택'); }
+  }
+  mp.state.okPrev = okNow;
+  if (okNow) detected.push('👌');
+
+  // G. 손목 시계 자세 → 메뉴 오버레이
+  let wristWatch = false;
+  for (const lm of hands) if (mpWristWatch(lm)) { wristWatch = true; break; }
+  mp.wristMenuEl.hidden = !wristWatch;
+  if (wristWatch) detected.push('🤚');
+
+  mp.tag.textContent = detected.length > 0 ? detected.join(' ') : '대기';
+}
+
 const moveSpeed = 60;
 const tmpQuat = new THREE.Quaternion();
 const tmpVec = new THREE.Vector3();
@@ -2644,6 +2946,7 @@ renderer.setAnimationLoop(() => {
 
   handleXRInput(dt);
   processGestures(dt);
+  processWebcamGestures(dt);
   updateFollow(dt);
 
   // 스카이박스 (별·별자리·우리은하 panorama) 전체를 카메라 따라가게 → 무한 배경 효과
