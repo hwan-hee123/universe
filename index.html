@@ -2488,21 +2488,15 @@ const HAND_CONNECTIONS = [
   [0,17],
 ];
 
-// 추가 메쉬 선 — 참조 이미지의 다각형 와이어프레임 느낌을 위해 손등/손바닥
-// 가로질러 별자리 그물처럼 가는 선을 연결. 기본 스켈레톤보다 훨씬 흐릿함.
+// 추가 메쉬 선 — 손바닥/손등 내부 그물망만. 손가락끼리는 절대 연결하지 않음
+// (그러면 부채꼴/물갈퀴처럼 보임). 손가락은 각자 독립된 5개의 선분으로 둠.
 const HAND_MESH_EXTRA = [
-  // 손바닥 / 손등 그물망
+  // 손목 → 각 손가락 MCP로 추가 spoke (palm fan)
   [0,9], [0,13],
-  [1,5],
-  [5,13], [9,17],
-  // 손가락 끝 가로 연결 (별자리 호)
-  [4,8], [8,12], [12,16], [16,20],
-  // 손가락 PIP/DIP 가로 연결
-  [3,7], [7,11], [11,15], [15,19],
-  // 손가락 MCP/IP 대각선 cross
-  [2,6], [6,10], [10,14], [14,18],
-  // 손바닥 내부 cross
-  [5,17], [1,9],
+  // 엄지 CMC ↔ 이웃 MCP (엄지 측 palm webbing)
+  [1,5], [1,9],
+  // MCP 사이 대각 cross-brace (손바닥 면 보강)
+  [5,13], [5,17], [9,17],
 ];
 
 let wireScene = null, wireCamera = null, wireRenderer = null;
@@ -2570,23 +2564,29 @@ function setupWireframeView() {
       joints.push(wrap);
     }
 
-    // 1차: 주 스켈레톤 — 손가락 뼈대. 흰색 + 중간 밝기
+    // 1차: 주 스켈레톤 — 손가락 뼈대. vertexColors로 깊이별 밝기 그라데이션
     const lineGeo = new THREE.BufferGeometry();
     const linePositions = new Float32Array(HAND_CONNECTIONS.length * 2 * 3);
+    const lineColors    = new Float32Array(HAND_CONNECTIONS.length * 2 * 3);
     lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    lineGeo.setAttribute('color',    new THREE.BufferAttribute(lineColors, 3));
     const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.55,
+      vertexColors: true,
+      transparent: true, opacity: 0.7,
       blending: THREE.AdditiveBlending,
       depthWrite: false, depthTest: false,
     }));
     group.add(lines);
 
-    // 2차: 그물망 cross 선 — 매우 흐릿한 백색, 별자리 망처럼 연결
+    // 2차: 그물망 cross 선 — 손바닥 영역만, 더 흐릿. 동일하게 깊이 그라데이션
     const meshLineGeo = new THREE.BufferGeometry();
     const meshLinePositions = new Float32Array(HAND_MESH_EXTRA.length * 2 * 3);
+    const meshLineColors    = new Float32Array(HAND_MESH_EXTRA.length * 2 * 3);
     meshLineGeo.setAttribute('position', new THREE.BufferAttribute(meshLinePositions, 3));
+    meshLineGeo.setAttribute('color',    new THREE.BufferAttribute(meshLineColors, 3));
     const meshLines = new THREE.LineSegments(meshLineGeo, new THREE.LineBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.18,
+      vertexColors: true,
+      transparent: true, opacity: 0.35,
       blending: THREE.AdditiveBlending,
       depthWrite: false, depthTest: false,
     }));
@@ -2618,6 +2618,17 @@ function updateWireframeView(leftLm, rightLm, currentMode) {
     if (!lm) { w.group.visible = false; continue; }
     w.group.visible = true;
 
+    // 손 전체의 z(깊이) 범위 계산 — vertex/halo 크기·밝기를 깊이로 변조해
+    // 입체감을 줌. 손이 카메라에 평행할 땐 zRange가 매우 작아 효과가 약하고,
+    // 손을 기울이면 가까운 vertex가 더 크고 밝게 빛나 3D처럼 보임.
+    let _minZ = Infinity, _maxZ = -Infinity;
+    for (let i = 0; i < 21; i++) {
+      const z = lm[i].z;
+      if (z < _minZ) _minZ = z;
+      if (z > _maxZ) _maxZ = z;
+    }
+    const _zRange = Math.max(_maxZ - _minZ, 0.04); // 너무 평평할 땐 효과 최소화
+
     // MediaPipe 0~1 좌표 → 화면 NDC (ortho cam 공간)
     //   x: 1 - 2p.x → mirror, 결과 -1~1 후 aspect 곱
     //   y: 1 - 2p.y → -1(아래) ~ 1(위)
@@ -2628,6 +2639,10 @@ function updateWireframeView(leftLm, rightLm, currentMode) {
         1 - 2 * p.y,
         -p.z * 0.5,
       );
+      // 깊이 기반 변조: 가까운 vertex(1) → 크고 밝게, 먼 vertex(0) → 작고 흐리게
+      const depthNorm = 1 - (p.z - _minZ) / _zRange;   // 0(far) ~ 1(near)
+      const depthScale = 0.55 + depthNorm * 0.85;       // 0.55 ~ 1.40
+      const depthOpa   = 0.30 + depthNorm * 0.60;       // 0.30 ~ 0.90
       const { core, halo } = w.joints[i].userData;
       // 기본 별빛 — 순백색 (참조 이미지의 vertex 빛)
       let coreColor = 0xffffff, haloColor = 0xffffff;
@@ -2651,31 +2666,50 @@ function updateWireframeView(leftLm, rightLm, currentMode) {
           }
         }
       }
+      // 깊이 모듈레이션 적용
       core.material.color.setHex(coreColor);
-      core.scale.setScalar(coreScaleMul);
+      core.scale.setScalar(coreScaleMul * (0.7 + depthNorm * 0.5));
       halo.material.color.setHex(haloColor);
-      halo.material.opacity = haloOpacity;
-      halo.scale.set(haloScale, haloScale, 1);
+      halo.material.opacity = haloOpacity * depthOpa;
+      halo.scale.set(haloScale * depthScale, haloScale * depthScale, 1);
     }
-    // 1차 스켈레톤 선 위치 갱신
+    // 각 vertex의 깊이 기반 밝기 (0.35 어두움 ~ 1.0 밝음)
+    const depthBright = new Array(21);
+    for (let i = 0; i < 21; i++) {
+      const dn = 1 - (lm[i].z - _minZ) / _zRange;
+      depthBright[i] = 0.35 + dn * 0.65;
+    }
+
+    // 1차 스켈레톤 선 위치 + 색상 갱신
     const pos = w.lines.geometry.attributes.position.array;
+    const col = w.lines.geometry.attributes.color.array;
     for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
       const [a, b] = HAND_CONNECTIONS[i];
       const A = w.joints[a].position, B = w.joints[b].position;
       pos[i*6]   = A.x; pos[i*6+1] = A.y; pos[i*6+2] = A.z;
       pos[i*6+3] = B.x; pos[i*6+4] = B.y; pos[i*6+5] = B.z;
+      const bA = depthBright[a], bB = depthBright[b];
+      col[i*6]   = bA; col[i*6+1] = bA; col[i*6+2] = bA;
+      col[i*6+3] = bB; col[i*6+4] = bB; col[i*6+5] = bB;
     }
     w.lines.geometry.attributes.position.needsUpdate = true;
-    // 2차 그물망 cross 선 위치 갱신 (별자리 망 효과)
+    w.lines.geometry.attributes.color.needsUpdate = true;
+
+    // 2차 그물망 cross 선 위치 + 색상 갱신
     if (w.meshLines) {
       const mpos = w.meshLines.geometry.attributes.position.array;
+      const mcol = w.meshLines.geometry.attributes.color.array;
       for (let i = 0; i < HAND_MESH_EXTRA.length; i++) {
         const [a, b] = HAND_MESH_EXTRA[i];
         const A = w.joints[a].position, B = w.joints[b].position;
         mpos[i*6]   = A.x; mpos[i*6+1] = A.y; mpos[i*6+2] = A.z;
         mpos[i*6+3] = B.x; mpos[i*6+4] = B.y; mpos[i*6+5] = B.z;
+        const bA = depthBright[a], bB = depthBright[b];
+        mcol[i*6]   = bA; mcol[i*6+1] = bA; mcol[i*6+2] = bA;
+        mcol[i*6+3] = bB; mcol[i*6+4] = bB; mcol[i*6+5] = bB;
       }
       w.meshLines.geometry.attributes.position.needsUpdate = true;
+      w.meshLines.geometry.attributes.color.needsUpdate = true;
     }
   }
 
