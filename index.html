@@ -133,6 +133,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { EffectComposer }    from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }        from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass }   from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass }        from 'three/addons/postprocessing/OutputPass.js';
 
 const loadingEl = document.getElementById('loading');
 
@@ -152,6 +156,19 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
+
+// ─── 후처리 (Bloom): 태양·밝은 별이 영화처럼 발광 ──
+// XR 모드에선 EffectComposer가 스테레오 렌더를 못 다루므로 일반 렌더러로 폴백
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight),
+  0.85,  // strength
+  0.55,  // radius
+  0.55   // threshold (낮을수록 더 많은 영역이 빛남)
+);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -189,11 +206,13 @@ manager.onError = (url) => {
 
 const texLoader = new THREE.TextureLoader(manager);
 texLoader.setCrossOrigin('anonymous');
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy(); // 보통 16. 비스듬한 각도에서 텍스처 선명도 향상.
 
 // 텍스처 색공간을 sRGB로 맞춰주는 헬퍼
 function loadTex(url, opts = {}) {
   const t = texLoader.load(url);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAX_ANISO;
   if (opts.repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
@@ -201,11 +220,14 @@ function loadTex(url, opts = {}) {
 function loadData(url) {
   const t = texLoader.load(url);
   t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = MAX_ANISO;
   return t;
 }
 
-// CDN: Jerome Etienne의 threex.planets (Planetary Visions 기반 공개 텍스처)
+// CDN: Jerome Etienne의 threex.planets (Planetary Visions 기반, 1k 공개 텍스처)
 const TEX = 'https://cdn.jsdelivr.net/gh/jeromeetienne/threex.planets@master/images/';
+// 지구 전용 4k 텍스처 (turban/webgl-earth, 공개)
+const TEX_EARTH = 'https://cdn.jsdelivr.net/gh/turban/webgl-earth@master/images/';
 
 // ─── 별: 다층 별필드 ──────────────────────────────────
 function makeStars(count, radius, size, color) {
@@ -339,8 +361,12 @@ const PLANETS = [
     orbit: 260,  speed: 0.14, axisTilt: 3.1,  spin: -0.2, labelColor: '#ffd58c' },
 
   { key: 'earth',   name: '지구 (Earth)',    radius: 12,
-    map: 'earthmap1k.jpg', bump: 'earthbump1k.jpg', spec: 'earthspec1k.jpg',
-    clouds: 'earthcloudmap.jpg',
+    // 지구만 4k 텍스처 사용 (다른 행성은 1k 그대로)
+    map:    TEX_EARTH + '2_no_clouds_4k.jpg',
+    bump:   TEX_EARTH + 'elev_bump_4k.jpg',
+    clouds: TEX_EARTH + 'fair_clouds_4k.png',
+    spec:   'earthspec1k.jpg', // 1k threex 그대로 (4k 호환 spec map이 없어서)
+    atmosphere: { color: 0x6699ff, scale: 1.04, intensity: 0.9 },
     orbit: 350,  speed: 0.11, axisTilt: 0.41, spin: 0.6,  labelColor: '#7fb8ff',
     moons: [
       { name: 'Moon', radius: 3.0, distance: 32, speed: 0.4,
@@ -411,20 +437,22 @@ const PLANETS = [
   },
 ];
 
+// 텍스처 이름이 절대 URL이면 그대로, 상대 이름이면 TEX 베이스 붙임
+function texPath(name) { return name.startsWith('http') ? name : TEX + name; }
+
 const planetMeshes = {};
 for (const p of PLANETS) {
   const matOpts = {
-    map: loadTex(TEX + p.map),
+    map: loadTex(texPath(p.map)),
     roughness: 0.95,
     metalness: 0.0,
   };
   if (p.bump) {
-    matOpts.bumpMap = loadData(TEX + p.bump);
+    matOpts.bumpMap = loadData(texPath(p.bump));
     matOpts.bumpScale = 0.35;
   }
   if (p.spec) {
-    // 바다 = 밝게 반사 (지구). roughnessMap의 반전된 형태를 specular로 활용
-    matOpts.roughnessMap = loadData(TEX + p.spec);
+    matOpts.roughnessMap = loadData(texPath(p.spec));
     matOpts.roughness = 0.75;
     matOpts.metalness = 0.1;
   }
@@ -442,9 +470,9 @@ for (const p of PLANETS) {
   scene.add(label);
   mesh.userData.label = label;
 
-  // 지구 구름 레이어
+  // 구름 레이어 (지구)
   if (p.clouds) {
-    const cloudsTex = loadTex(TEX + p.clouds);
+    const cloudsTex = loadTex(texPath(p.clouds));
     const cloudsMat = new THREE.MeshStandardMaterial({
       map: cloudsTex,
       transparent: true,
@@ -458,6 +486,48 @@ for (const p of PLANETS) {
     );
     mesh.add(clouds);
     mesh.userData.cloudsMesh = clouds;
+  }
+
+  // 대기 글로우 (Fresnel 셰이더 — 가장자리에서 강하게 빛남)
+  if (p.atmosphere) {
+    const atmoMat = new THREE.ShaderMaterial({
+      uniforms: {
+        glowColor: { value: new THREE.Color(p.atmosphere.color) },
+        intensity: { value: p.atmosphere.intensity ?? 1.0 },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vView;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vView = -mv.xyz;
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 glowColor;
+        uniform float intensity;
+        varying vec3 vNormal;
+        varying vec3 vView;
+        void main() {
+          vec3 v = normalize(vView);
+          float rim = 1.0 - max(dot(vNormal, v), 0.0);
+          rim = pow(rim, 2.5);
+          gl_FragColor = vec4(glowColor, rim * intensity);
+        }
+      `,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+    });
+    const atmo = new THREE.Mesh(
+      new THREE.SphereGeometry(p.radius * (p.atmosphere.scale ?? 1.04), 64, 64),
+      atmoMat
+    );
+    mesh.add(atmo);
+    mesh.userData.atmosphere = atmo;
   }
 
   // 고리 (토성: 실제 텍스처 / 목성·천왕성·해왕성: 단색 얇은 고리)
@@ -479,7 +549,7 @@ for (const p of PLANETS) {
 
     let ringMat;
     if (p.ring.texture) {
-      const ringTex = loadTex(TEX + p.ring.texture);
+      const ringTex = loadTex(texPath(p.ring.texture));
       ringMat = new THREE.MeshBasicMaterial({
         map: ringTex, alphaMap: ringTex,
         transparent: true, side: THREE.DoubleSide, depthWrite: false,
@@ -523,8 +593,8 @@ for (const p of PLANETS) {
   for (const m of p.moons) {
     let moonMat;
     if (m.map) {
-      const opts = { map: loadTex(TEX + m.map), roughness: 0.95, metalness: 0.0 };
-      if (m.bump) { opts.bumpMap = loadData(TEX + m.bump); opts.bumpScale = 0.25; }
+      const opts = { map: loadTex(texPath(m.map)), roughness: 0.95, metalness: 0.0 };
+      if (m.bump) { opts.bumpMap = loadData(texPath(m.bump)); opts.bumpScale = 0.25; }
       moonMat = new THREE.MeshStandardMaterial(opts);
     } else {
       moonMat = new THREE.MeshStandardMaterial({
@@ -1641,6 +1711,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
 });
 
 // ─── 메인 루프 ───────────────────────────────────────
@@ -1702,7 +1773,9 @@ renderer.setAnimationLoop(() => {
   handleXRInput(dt);
   updateFollow(dt);
   controls.update();
-  renderer.render(scene, camera);
+  // XR에선 후처리가 stereo 호환 안 되므로 일반 렌더러 사용
+  if (renderer.xr.isPresenting) renderer.render(scene, camera);
+  else                          composer.render();
 });
 </script>
 </body>
