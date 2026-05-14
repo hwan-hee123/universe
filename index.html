@@ -285,6 +285,98 @@
     0%, 100% { opacity: 0.25; }
     50%      { opacity: 0.7; }
   }
+
+  /* ───────────────────────────────────────────────
+     캘리브레이션 / 시스템 체크 화면
+     인트로 종료 후 → 헤드 + 손 트래킹 상태 표시 → 메인 씬
+     ─────────────────────────────────────────────── */
+  #calibScreen {
+    position: fixed; inset: 0; z-index: 9998;
+    background: #000;
+    overflow: hidden;
+    transition: opacity 1.2s ease-out;
+    cursor: pointer;
+    font-family: 'Orbitron', system-ui, sans-serif;
+    color: #fff;
+  }
+  #calibScreen[hidden] { display: none; }
+  #calibScreen.fading { opacity: 0; pointer-events: none; }
+  #calibScreen .calib-bg {
+    position: absolute; inset: 0;
+    background-image: url('assets/calib_head.png');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    animation: calibBgPulse 4s ease-in-out infinite;
+  }
+  @keyframes calibBgPulse {
+    0%, 100% { filter: brightness(0.95); }
+    50%      { filter: brightness(1.10); }
+  }
+  /* 부드러운 스캔 라인 — 위아래로 움직임 */
+  #calibScreen .scanline {
+    position: absolute; left: 0; right: 0; height: 4px;
+    background: linear-gradient(to bottom,
+      transparent 0%, rgba(255,170,80,0.45) 50%, transparent 100%);
+    box-shadow: 0 0 18px 4px rgba(255,170,80,0.25);
+    top: 0;
+    animation: scanlineMove 3.4s ease-in-out infinite;
+  }
+  @keyframes scanlineMove {
+    0%   { top: 5%;  opacity: 0; }
+    10%  { opacity: 1; }
+    50%  { top: 95%; opacity: 1; }
+    60%  { opacity: 0; }
+    100% { top: 95%; opacity: 0; }
+  }
+  /* 상태 라벨 */
+  #calibScreen .calib-status {
+    position: absolute; bottom: 7%; left: 50%;
+    transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 10px;
+    text-align: center; min-width: 360px;
+  }
+  #calibScreen .calib-status .row {
+    font-size: 12px; letter-spacing: 0.35em;
+    color: rgba(255,255,255,0.85);
+    text-transform: uppercase;
+    text-shadow: 0 0 12px rgba(120,160,255,0.35);
+  }
+  #calibScreen .calib-status .row .val {
+    margin-left: 8px;
+    font-weight: 500;
+  }
+  #calibScreen .calib-status .ok    { color: #6cffa9; text-shadow: 0 0 10px rgba(80,255,150,0.5); }
+  #calibScreen .calib-status .scan  { color: #ffc857; animation: calScanBlink 1.0s linear infinite; }
+  #calibScreen .calib-status .fail  { color: #ff7a7a; }
+  #calibScreen .calib-status .muted { color: rgba(255,255,255,0.35); }
+  @keyframes calScanBlink {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+  }
+  /* 상단 라벨 */
+  #calibScreen .calib-header {
+    position: absolute; top: 5%; left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px; letter-spacing: 0.5em;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    text-align: center;
+  }
+  #calibScreen .calib-header .small {
+    display: block; margin-top: 4px;
+    font-size: 9px; letter-spacing: 0.3em;
+    color: rgba(255,255,255,0.3);
+  }
+  /* 하단 스킵 안내 */
+  #calibScreen .calib-skip {
+    position: absolute; bottom: 1.5%; left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px; letter-spacing: 0.4em;
+    color: rgba(255,255,255,0.3);
+    text-transform: uppercase;
+    animation: skipBlink 2.4s ease-in-out infinite;
+  }
 </style>
 </head>
 <body>
@@ -307,6 +399,24 @@
   </div>
   <div class="flash" id="introFlash"></div>
   <div class="skip">click anywhere to enter</div>
+</div>
+
+<!-- ─── 캘리브레이션 / 시스템 체크 화면 ──────────── -->
+<!-- 인트로 종료 후 자동으로 표시. HEAD MOUNT는 시뮬레이션, -->
+<!-- HAPTIC GLOVES는 MediaPipe 손 트래킹으로 실제 감지. -->
+<div id="calibScreen" hidden aria-label="System calibration">
+  <div class="calib-bg"></div>
+  <div class="scanline"></div>
+  <div class="calib-header">
+    ABYSS SYSTEM INITIALIZATION
+    <span class="small">Stand by — verifying device pairing</span>
+  </div>
+  <div class="calib-status">
+    <div class="row">HEAD MOUNT &nbsp;·&nbsp; <span class="val ok" id="calibHeadVal">ACTIVE</span></div>
+    <div class="row">HAPTIC GLOVES &nbsp;·&nbsp; <span class="val scan" id="calibHandVal">SCANNING</span></div>
+    <div class="row" id="calibFinalRow"><span class="val muted" id="calibFinalVal">SYSTEM PENDING</span></div>
+  </div>
+  <div class="calib-skip" id="calibSkip">show hands to camera · or click to enter</div>
 </div>
 
 <div id="info">
@@ -403,7 +513,10 @@
     if (done) return;
     done = true;
     intro.classList.add('fading');
-    setTimeout(() => intro.remove(), 1400);
+    setTimeout(() => {
+      intro.remove();
+      startCalibration();          // ← 인트로 페이드 끝나면 캘리브레이션 시작
+    }, 1400);
   }
 
   // 클릭/키보드로 스킵 (시연 중 유용)
@@ -411,6 +524,83 @@
   window.addEventListener('keydown', (e) => {
     if (!done && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) endIntro();
   }, { once: false });
+
+  /* ─── 캘리브레이션 화면 ──────────────────────────── */
+  function startCalibration(){
+    const calib   = document.getElementById('calibScreen');
+    if (!calib) return;
+    const handVal  = document.getElementById('calibHandVal');
+    const finalVal = document.getElementById('calibFinalVal');
+    const skipEl   = document.getElementById('calibSkip');
+    calib.hidden = false;
+
+    // MediaPipe 와이어프레임 캔버스가 캘리브레이션 위로 보이게 임시로 z-index 끌어올림
+    // (mpWireCanvas는 보통 z-index:40으로 UI 아래라, 9998인 calibScreen에 가려짐)
+    const bumpWireZ = () => {
+      const wc = document.getElementById('mpWireCanvas');
+      if (wc) { wc.style.zIndex = '9999'; wc.style.pointerEvents = 'none'; }
+    };
+    bumpWireZ();
+    const wireBumpInterval = setInterval(bumpWireZ, 500); // mp 시작 후 캔버스 생기는 경우 대비
+
+    let calibDone = false;
+    let handsDetected = false;
+
+    // 시연용 — 2초 후 MediaPipe 자동 시작 시도 (이미 켜져 있으면 패스)
+    setTimeout(() => {
+      if (calibDone) return;
+      const handBtn = document.getElementById('handBtn');
+      if (handBtn && !window.__mpRunning) {
+        skipEl.textContent = 'requesting camera...';
+        try { handBtn.click(); } catch(e) {}
+      }
+    }, 1200);
+
+    // 메인 스크립트가 MediaPipe로 손을 처음 인식하면 window.__abyssHandSeen() 호출
+    window.__abyssHandSeen = () => {
+      if (handsDetected) return;
+      handsDetected = true;
+      handVal.classList.remove('scan');
+      handVal.classList.add('ok');
+      handVal.textContent = 'CONNECTED';
+      finalVal.classList.remove('muted');
+      finalVal.classList.add('ok');
+      finalVal.textContent = '◆ SYSTEM READY ◆';
+      skipEl.textContent = 'entering...';
+      setTimeout(endCalibration, 1400);
+    };
+
+    // 10초 타임아웃 — 손 검출 실패해도 진행
+    setTimeout(() => {
+      if (calibDone || handsDetected) return;
+      handVal.classList.remove('scan');
+      handVal.classList.add('muted');
+      handVal.textContent = 'SKIPPED';
+      finalVal.classList.remove('muted');
+      finalVal.textContent = '◆ ENTERING UNIVERSE ◆';
+      setTimeout(endCalibration, 900);
+    }, 10000);
+
+    function endCalibration(){
+      if (calibDone) return;
+      calibDone = true;
+      clearInterval(wireBumpInterval);
+      // 와이어프레임 캔버스 z-index 원상복구
+      const wc = document.getElementById('mpWireCanvas');
+      if (wc) wc.style.zIndex = '';
+      calib.classList.add('fading');
+      setTimeout(() => calib.remove(), 1300);
+    }
+
+    // 클릭/키보드로 캘리브레이션 스킵
+    calib.addEventListener('click', endCalibration);
+    window.addEventListener('keydown', function onKey(e){
+      if (!calibDone && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
+        endCalibration();
+        window.removeEventListener('keydown', onKey);
+      }
+    });
+  }
 })();
 </script>
 
@@ -2142,6 +2332,7 @@ async function startWebcamHands() {
     if (wireRenderer) wireRenderer.domElement.hidden = false;
 
     mp.active = true;
+    window.__mpRunning = true;     // 캘리브레이션 화면 등 외부 코드가 상태 확인용
     document.getElementById('handBtn').classList.add('active');
     document.getElementById('handBtn').textContent = '⏹ 손 인식 끄기';
     mp.wristMenuEl.hidden = false;  // 가이드 항상 표시
@@ -2317,28 +2508,56 @@ function setupWireframeView() {
   wireRenderer.domElement.id = 'mpWireCanvas';
   document.body.appendChild(wireRenderer.domElement);
 
-  // 두 손용 스켈레톤 (배경 별 없음 — 우주 화면이 배경)
+  // 별빛 점에 사용할 부드러운 원형 스프라이트 텍스처 (글로우 효과)
+  const starCanvas = document.createElement('canvas');
+  starCanvas.width = starCanvas.height = 128;
+  const sctx = starCanvas.getContext('2d');
+  const grad = sctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0.0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.2, 'rgba(220,235,255,0.85)');
+  grad.addColorStop(0.55, 'rgba(150,190,255,0.25)');
+  grad.addColorStop(1.0, 'rgba(150,190,255,0)');
+  sctx.fillStyle = grad;
+  sctx.fillRect(0, 0, 128, 128);
+  const starTex = new THREE.CanvasTexture(starCanvas);
+
+  // 두 손용 별자리 스켈레톤
+  // 21개 관절 = 별 (sprite 글로우 + sphere 중심), 21개 연결 = 별자리 선
   for (let h = 0; h < 2; h++) {
     const group = new THREE.Group();
     group.visible = false;
     const joints = [];
     for (let i = 0; i < 21; i++) {
-      const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(0.018, 12, 12),
+      const wrap = new THREE.Group();
+      // 중심: 작고 밝은 흰색 별
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.010, 10, 10),
         new THREE.MeshBasicMaterial({
-          color: 0xff7744, transparent: true, opacity: 0.95,
+          color: 0xeef5ff, transparent: true, opacity: 1.0,
           blending: THREE.AdditiveBlending,
           depthWrite: false, depthTest: false,
         })
       );
-      group.add(sphere);
-      joints.push(sphere);
+      wrap.add(core);
+      // 글로우 후광 (sprite)
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: starTex, color: 0xbcd4ff,
+        transparent: true, opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false, depthTest: false,
+      }));
+      halo.scale.set(0.055, 0.055, 1);
+      wrap.add(halo);
+      wrap.userData = { core, halo };
+      group.add(wrap);
+      joints.push(wrap);
     }
+    // 별자리 선 — 매우 가늘고 흐릿함
     const lineGeo = new THREE.BufferGeometry();
     const linePositions = new Float32Array(HAND_CONNECTIONS.length * 2 * 3);
     lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
     const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
-      color: 0xff6644, transparent: true, opacity: 0.9,
+      color: 0xaaccff, transparent: true, opacity: 0.35,
       blending: THREE.AdditiveBlending,
       depthWrite: false, depthTest: false,
     }));
@@ -2379,17 +2598,33 @@ function updateWireframeView(leftLm, rightLm, currentMode) {
         1 - 2 * p.y,
         -p.z * 0.5,
       );
-      // 색·크기: 왼손 끝은 모드별 색
-      let color = 0xff7744, sizeMul = 1.0;
+      const { core, halo } = w.joints[i].userData;
+      // 기본 별빛 (창백한 푸른 흰색)
+      let coreColor = 0xeef5ff, haloColor = 0xbcd4ff;
+      let haloScale = 0.055, coreScaleMul = 1.0, haloOpacity = 0.85;
+      // 왼손 손가락 끝은 모드별 색깔로 더 크게 빛남 (선택된 모드는 핑크/파랑/초록 별)
       if (isLeftSlot[h]) {
-        if (i === 4)       { color = currentMode === 'A' ? 0xffaadd : 0xff6688; sizeMul = currentMode === 'A' ? 1.8 : 1.3; }
-        else if (i === 8)  { color = currentMode === 'D' ? 0xaaddff : 0x66aaff; sizeMul = currentMode === 'D' ? 1.8 : 1.3; }
-        else if (i === 12) { color = currentMode === 'B' ? 0xaaffaa : 0x88ff88; sizeMul = currentMode === 'B' ? 1.8 : 1.3; }
+        const isSel = (i === 4 && currentMode === 'A')
+                   || (i === 8 && currentMode === 'D')
+                   || (i === 12 && currentMode === 'B');
+        if (i === 4) {
+          coreColor = 0xffe0ee; haloColor = currentMode === 'A' ? 0xffaadd : 0xff7799;
+          haloScale = isSel ? 0.10 : 0.07; coreScaleMul = isSel ? 1.6 : 1.2;
+        } else if (i === 8) {
+          coreColor = 0xeaf5ff; haloColor = currentMode === 'D' ? 0xaaddff : 0x77aaff;
+          haloScale = isSel ? 0.10 : 0.07; coreScaleMul = isSel ? 1.6 : 1.2;
+        } else if (i === 12) {
+          coreColor = 0xeaffea; haloColor = currentMode === 'B' ? 0xaaffaa : 0x77cc88;
+          haloScale = isSel ? 0.10 : 0.07; coreScaleMul = isSel ? 1.6 : 1.2;
+        }
       }
-      w.joints[i].material.color.setHex(color);
-      w.joints[i].scale.setScalar(sizeMul);
+      core.material.color.setHex(coreColor);
+      core.scale.setScalar(coreScaleMul);
+      halo.material.color.setHex(haloColor);
+      halo.material.opacity = haloOpacity;
+      halo.scale.set(haloScale, haloScale, 1);
     }
-    // 선 위치 갱신
+    // 별자리 선 위치 갱신
     const pos = w.lines.geometry.attributes.position.array;
     for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
       const [a, b] = HAND_CONNECTIONS[i];
@@ -2435,6 +2670,9 @@ function processWebcamGestures(dt) {
     fingerMenu.prevRightY = null;
     return;
   }
+
+  // 캘리브레이션 화면에 첫 손 검출을 알림 (한 번만)
+  if (window.__abyssHandSeen) { window.__abyssHandSeen(); window.__abyssHandSeen = null; }
 
   // 왼손/오른손 식별 (handedness 기반, fallback은 x좌표)
   let leftLm = null, rightLm = null;
