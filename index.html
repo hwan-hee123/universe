@@ -2488,6 +2488,23 @@ const HAND_CONNECTIONS = [
   [0,17],
 ];
 
+// 추가 메쉬 선 — 참조 이미지의 다각형 와이어프레임 느낌을 위해 손등/손바닥
+// 가로질러 별자리 그물처럼 가는 선을 연결. 기본 스켈레톤보다 훨씬 흐릿함.
+const HAND_MESH_EXTRA = [
+  // 손바닥 / 손등 그물망
+  [0,9], [0,13],
+  [1,5],
+  [5,13], [9,17],
+  // 손가락 끝 가로 연결 (별자리 호)
+  [4,8], [8,12], [12,16], [16,20],
+  // 손가락 PIP/DIP 가로 연결
+  [3,7], [7,11], [11,15], [15,19],
+  // 손가락 MCP/IP 대각선 cross
+  [2,6], [6,10], [10,14], [14,18],
+  // 손바닥 내부 cross
+  [5,17], [1,9],
+];
+
 let wireScene = null, wireCamera = null, wireRenderer = null;
 const wireHands = []; // [{ group, joints:[21], lines }] × 2
 
@@ -2508,62 +2525,75 @@ function setupWireframeView() {
   wireRenderer.domElement.id = 'mpWireCanvas';
   document.body.appendChild(wireRenderer.domElement);
 
-  // 별빛 점에 사용할 부드러운 원형 스프라이트 텍스처 (글로우 효과)
+  // 별빛 점 텍스처 — 부드러운 원형 글로우 (참조 이미지의 vertex 빛 표현)
   const starCanvas = document.createElement('canvas');
   starCanvas.width = starCanvas.height = 128;
   const sctx = starCanvas.getContext('2d');
   const grad = sctx.createRadialGradient(64, 64, 0, 64, 64, 64);
   grad.addColorStop(0.0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.2, 'rgba(220,235,255,0.85)');
-  grad.addColorStop(0.55, 'rgba(150,190,255,0.25)');
-  grad.addColorStop(1.0, 'rgba(150,190,255,0)');
+  grad.addColorStop(0.18, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(0.45, 'rgba(220,230,255,0.35)');
+  grad.addColorStop(1.0, 'rgba(180,200,255,0)');
   sctx.fillStyle = grad;
   sctx.fillRect(0, 0, 128, 128);
   const starTex = new THREE.CanvasTexture(starCanvas);
 
-  // 두 손용 별자리 스켈레톤
-  // 21개 관절 = 별 (sprite 글로우 + sphere 중심), 21개 연결 = 별자리 선
+  // 두 손용 와이어프레임 별자리 스켈레톤.
+  // 구성: 21개 vertex (작은 흰별 + 글로우) + 두 종류 선(주 스켈레톤 + 그물망 cross)
   for (let h = 0; h < 2; h++) {
     const group = new THREE.Group();
     group.visible = false;
     const joints = [];
     for (let i = 0; i < 21; i++) {
       const wrap = new THREE.Group();
-      // 중심: 작고 밝은 흰색 별
+      // 중심: 아주 작고 밝은 순백색 점 (vertex)
       const core = new THREE.Mesh(
-        new THREE.SphereGeometry(0.010, 10, 10),
+        new THREE.SphereGeometry(0.007, 8, 8),
         new THREE.MeshBasicMaterial({
-          color: 0xeef5ff, transparent: true, opacity: 1.0,
+          color: 0xffffff, transparent: true, opacity: 1.0,
           blending: THREE.AdditiveBlending,
           depthWrite: false, depthTest: false,
         })
       );
       wrap.add(core);
-      // 글로우 후광 (sprite)
+      // 글로우 후광 — 작고 절제된 백색 글로우
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: starTex, color: 0xbcd4ff,
-        transparent: true, opacity: 0.85,
+        map: starTex, color: 0xffffff,
+        transparent: true, opacity: 0.55,
         blending: THREE.AdditiveBlending,
         depthWrite: false, depthTest: false,
       }));
-      halo.scale.set(0.055, 0.055, 1);
+      halo.scale.set(0.032, 0.032, 1);
       wrap.add(halo);
       wrap.userData = { core, halo };
       group.add(wrap);
       joints.push(wrap);
     }
-    // 별자리 선 — 매우 가늘고 흐릿함
+
+    // 1차: 주 스켈레톤 — 손가락 뼈대. 흰색 + 중간 밝기
     const lineGeo = new THREE.BufferGeometry();
     const linePositions = new Float32Array(HAND_CONNECTIONS.length * 2 * 3);
     lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
     const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
-      color: 0xaaccff, transparent: true, opacity: 0.35,
+      color: 0xffffff, transparent: true, opacity: 0.55,
       blending: THREE.AdditiveBlending,
       depthWrite: false, depthTest: false,
     }));
     group.add(lines);
+
+    // 2차: 그물망 cross 선 — 매우 흐릿한 백색, 별자리 망처럼 연결
+    const meshLineGeo = new THREE.BufferGeometry();
+    const meshLinePositions = new Float32Array(HAND_MESH_EXTRA.length * 2 * 3);
+    meshLineGeo.setAttribute('position', new THREE.BufferAttribute(meshLinePositions, 3));
+    const meshLines = new THREE.LineSegments(meshLineGeo, new THREE.LineBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.18,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false, depthTest: false,
+    }));
+    group.add(meshLines);
+
     wireScene.add(group);
-    wireHands.push({ group, joints, lines });
+    wireHands.push({ group, joints, lines, meshLines });
   }
 
   // 창 크기 변경 시 ortho cam·렌더러 갱신
@@ -2599,23 +2629,26 @@ function updateWireframeView(leftLm, rightLm, currentMode) {
         -p.z * 0.5,
       );
       const { core, halo } = w.joints[i].userData;
-      // 기본 별빛 (창백한 푸른 흰색)
-      let coreColor = 0xeef5ff, haloColor = 0xbcd4ff;
-      let haloScale = 0.055, coreScaleMul = 1.0, haloOpacity = 0.85;
-      // 왼손 손가락 끝은 모드별 색깔로 더 크게 빛남 (선택된 모드는 핑크/파랑/초록 별)
+      // 기본 별빛 — 순백색 (참조 이미지의 vertex 빛)
+      let coreColor = 0xffffff, haloColor = 0xffffff;
+      let haloScale = 0.032, coreScaleMul = 1.0, haloOpacity = 0.55;
+      // 왼손 손가락 끝 3개: 모드 선택을 위한 컬러 큐 — 선택 시에만 컬러로,
+      // 비선택 상태는 약간만 큰 흰별로 유지해 전체 톤 깨지지 않게 함
       if (isLeftSlot[h]) {
         const isSel = (i === 4 && currentMode === 'A')
                    || (i === 8 && currentMode === 'D')
                    || (i === 12 && currentMode === 'B');
-        if (i === 4) {
-          coreColor = 0xffe0ee; haloColor = currentMode === 'A' ? 0xffaadd : 0xff7799;
-          haloScale = isSel ? 0.10 : 0.07; coreScaleMul = isSel ? 1.6 : 1.2;
-        } else if (i === 8) {
-          coreColor = 0xeaf5ff; haloColor = currentMode === 'D' ? 0xaaddff : 0x77aaff;
-          haloScale = isSel ? 0.10 : 0.07; coreScaleMul = isSel ? 1.6 : 1.2;
-        } else if (i === 12) {
-          coreColor = 0xeaffea; haloColor = currentMode === 'B' ? 0xaaffaa : 0x77cc88;
-          haloScale = isSel ? 0.10 : 0.07; coreScaleMul = isSel ? 1.6 : 1.2;
+        if (i === 4 || i === 8 || i === 12) {
+          if (isSel) {
+            // 선택된 모드 → 컬러 별, 크게 빛남
+            if (i === 4)  { haloColor = 0xffaadd; }
+            else if (i === 8)  { haloColor = 0xaaddff; }
+            else { haloColor = 0xaaffaa; }
+            haloScale = 0.085; coreScaleMul = 1.5; haloOpacity = 0.9;
+          } else {
+            // 비선택 → 살짝 더 큰 흰별 (선택 가능한 vertex 힌트)
+            haloScale = 0.045; coreScaleMul = 1.15; haloOpacity = 0.7;
+          }
         }
       }
       core.material.color.setHex(coreColor);
@@ -2624,7 +2657,7 @@ function updateWireframeView(leftLm, rightLm, currentMode) {
       halo.material.opacity = haloOpacity;
       halo.scale.set(haloScale, haloScale, 1);
     }
-    // 별자리 선 위치 갱신
+    // 1차 스켈레톤 선 위치 갱신
     const pos = w.lines.geometry.attributes.position.array;
     for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
       const [a, b] = HAND_CONNECTIONS[i];
@@ -2633,6 +2666,17 @@ function updateWireframeView(leftLm, rightLm, currentMode) {
       pos[i*6+3] = B.x; pos[i*6+4] = B.y; pos[i*6+5] = B.z;
     }
     w.lines.geometry.attributes.position.needsUpdate = true;
+    // 2차 그물망 cross 선 위치 갱신 (별자리 망 효과)
+    if (w.meshLines) {
+      const mpos = w.meshLines.geometry.attributes.position.array;
+      for (let i = 0; i < HAND_MESH_EXTRA.length; i++) {
+        const [a, b] = HAND_MESH_EXTRA[i];
+        const A = w.joints[a].position, B = w.joints[b].position;
+        mpos[i*6]   = A.x; mpos[i*6+1] = A.y; mpos[i*6+2] = A.z;
+        mpos[i*6+3] = B.x; mpos[i*6+4] = B.y; mpos[i*6+5] = B.z;
+      }
+      w.meshLines.geometry.attributes.position.needsUpdate = true;
+    }
   }
 
   wireRenderer.render(wireScene, wireCamera);
