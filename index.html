@@ -189,10 +189,8 @@
     50%      { opacity: 0.85; }
   }
   #introScreen .title {
-    position: absolute; top: 12vh;
-    display: flex; flex-direction: column; align-items: center; gap: 14px;
-    opacity: 0;
-    animation: titleIn 1.8s 0.4s ease-out forwards;
+    /* 이미지에 이미 ABYSS 타이틀이 들어있어 CSS 타이틀은 숨김 */
+    display: none;
   }
   #introScreen .title .chev {
     width: 64px; height: 14px;
@@ -220,48 +218,60 @@
     to   { opacity: 1; transform: translateY(0); }
   }
 
-  /* 가운데 합쳐지는 손가락 + 빛 */
+  /* 인트로 손 이미지 — 좌우 반으로 잘라서 안쪽으로 미끄러져 들어옴 */
   #introScreen .scene {
-    position: relative;
-    width: min(92vw, 1100px);
-    height: min(55vh, 460px);
-    display: flex; align-items: center; justify-content: center;
+    position: absolute; inset: 0;
+    pointer-events: none;
   }
-  #introScreen .hand {
-    position: absolute; top: 50%;
-    width: 46%; height: 70%;
-    transform: translateY(-50%);
+  #introScreen .hand-half {
+    position: absolute; inset: 0;
+    background-image: url('assets/abyss_intro.jpg');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    will-change: transform, opacity;
   }
-  #introScreen .hand svg {
-    width: 100%; height: 100%; display: block;
-    filter: drop-shadow(0 0 10px rgba(120,160,255,0.18));
+  /* 좌측 절반만 보임 + 시작 시 더 왼쪽에 위치 */
+  #introScreen .hand-half.left {
+    clip-path: inset(0 50% 0 0);
+    opacity: 0;
+    transform: translateX(-80px);
+    animation: handLeftIn 2.4s 0.4s cubic-bezier(.22,.61,.36,1) forwards;
   }
-  #introScreen .hand.left  { left: 0;  animation: handLeftIn  2.4s 0.6s ease-out forwards; opacity: 0; transform: translate(-30px,-50%); }
-  #introScreen .hand.right { right: 0; animation: handRightIn 2.4s 0.6s ease-out forwards; opacity: 0; transform: translate( 30px,-50%); }
+  #introScreen .hand-half.right {
+    clip-path: inset(0 0 0 50%);
+    opacity: 0;
+    transform: translateX(80px);
+    animation: handRightIn 2.4s 0.4s cubic-bezier(.22,.61,.36,1) forwards;
+  }
   @keyframes handLeftIn {
-    0%   { opacity: 0; transform: translate(-30px,-50%); }
-    30%  { opacity: 1; }
-    100% { opacity: 1; transform: translate(0,-50%); }
+    0%   { opacity: 0; transform: translateX(-80px); }
+    25%  { opacity: 1; }
+    100% { opacity: 1; transform: translateX(0); }
   }
   @keyframes handRightIn {
-    0%   { opacity: 0; transform: translate(30px,-50%); }
-    30%  { opacity: 1; }
-    100% { opacity: 1; transform: translate(0,-50%); }
+    0%   { opacity: 0; transform: translateX(80px); }
+    25%  { opacity: 1; }
+    100% { opacity: 1; transform: translateX(0); }
   }
-  /* 두 손가락이 거의 만나는 마지막 단계 — 살짝 더 안으로 */
-  #introScreen .hand.left.approach  { animation: handLeftApproach  1.4s ease-in forwards; }
-  #introScreen .hand.right.approach { animation: handRightApproach 1.4s ease-in forwards; }
+  /* 마지막 접근 — 손끝이 닿기 직전 살짝 더 안으로 */
+  #introScreen .hand-half.left.approach  { animation: handLeftApproach  1.4s ease-in forwards; }
+  #introScreen .hand-half.right.approach { animation: handRightApproach 1.4s ease-in forwards; }
   @keyframes handLeftApproach {
-    from { transform: translate(0,-50%);    }
-    to   { transform: translate(28px,-50%); }
+    from { transform: translateX(0);    }
+    to   { transform: translateX(14px); }
   }
   @keyframes handRightApproach {
-    from { transform: translate(0,-50%);     }
-    to   { transform: translate(-28px,-50%); }
+    from { transform: translateX(0);     }
+    to   { transform: translateX(-14px); }
   }
 
-  /* 가운데 빛 / 동심원 */
-  #introScreen .spark {
+  /* 이미지에 이미 동심원이 그려져 있어 추가 링/스파크는 숨김 */
+  #introScreen .spark,
+  #introScreen .ring { display: none; }
+
+  /* (legacy, 사용 안 함) */
+  #introScreen .spark.__unused {
     position: absolute; left: 50%; top: 50%;
     width: 16px; height: 16px; border-radius: 50%;
     transform: translate(-50%,-50%) scale(0.2);
@@ -332,66 +342,10 @@
   </div>
 
   <div class="scene">
-    <!-- 왼쪽 손 (와이어프레임 느낌, 검지로 오른쪽 가리킴) -->
-    <div class="hand left" id="introHandLeft">
-      <svg viewBox="0 0 500 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="wireGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"  stop-color="rgba(140,180,255,0.15)"/>
-            <stop offset="60%" stop-color="rgba(180,210,255,0.7)"/>
-            <stop offset="100%" stop-color="rgba(255,255,255,0.95)"/>
-          </linearGradient>
-        </defs>
-        <g fill="none" stroke="url(#wireGrad)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
-          <!-- 손바닥 외곽 -->
-          <path d="M 40,210 Q 30,160 70,130 L 130,90 Q 160,70 200,80 L 320,140 Q 380,170 420,200 L 470,230" />
-          <!-- 손등 능선 -->
-          <path d="M 60,230 Q 100,200 150,200 L 260,210 Q 340,220 420,220" />
-          <!-- 손가락(나머지, 살짝 접힘) -->
-          <path d="M 200,80 Q 230,40 260,60 Q 280,80 270,120" />
-          <path d="M 230,90 Q 260,50 290,70 Q 310,90 300,130" />
-          <path d="M 260,100 Q 290,70 320,90 Q 340,110 330,140" />
-          <!-- 검지 (앞으로 쭉) -->
-          <path d="M 290,150 L 360,140 L 430,135 L 478,132" stroke-width="1.6"/>
-          <!-- 엄지 (살짝 위) -->
-          <path d="M 80,180 Q 110,150 150,150 L 200,160" />
-          <!-- 격자 (와이어 느낌) -->
-          <path d="M 80,200 L 120,170 M 130,210 L 170,180 M 180,220 L 220,190 M 230,220 L 270,200 M 290,150 L 320,170 M 360,140 L 380,160" stroke-width="0.6" opacity="0.55"/>
-          <!-- 관절 노드 -->
-          <circle cx="290" cy="150" r="3" fill="rgba(200,220,255,0.9)" stroke="none"/>
-          <circle cx="360" cy="140" r="2.4" fill="rgba(200,220,255,0.8)" stroke="none"/>
-          <circle cx="430" cy="135" r="2.4" fill="rgba(220,235,255,0.95)" stroke="none"/>
-          <circle cx="478" cy="132" r="3.4" fill="#fff" stroke="none"/>
-        </g>
-      </svg>
-    </div>
-
-    <!-- 오른쪽 손 (좀 더 부드러운 실루엣, 검지로 왼쪽 가리킴) -->
-    <div class="hand right" id="introHandRight">
-      <svg viewBox="0 0 500 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="skinGrad" x1="1" y1="0" x2="0" y2="0">
-            <stop offset="0%"  stop-color="rgba(120,150,210,0.15)"/>
-            <stop offset="60%" stop-color="rgba(210,225,255,0.7)"/>
-            <stop offset="100%" stop-color="rgba(255,255,255,0.95)"/>
-          </linearGradient>
-        </defs>
-        <g fill="none" stroke="url(#skinGrad)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
-          <!-- 거울 대칭: viewBox 그대로, x 좌표만 반대 -->
-          <path d="M 460,210 Q 470,160 430,130 L 370,90 Q 340,70 300,80 L 180,140 Q 120,170 80,200 L 30,230" />
-          <path d="M 440,230 Q 400,200 350,200 L 240,210 Q 160,220 80,220" />
-          <path d="M 300,80 Q 270,40 240,60 Q 220,80 230,120" />
-          <path d="M 270,90 Q 240,50 210,70 Q 190,90 200,130" />
-          <path d="M 240,100 Q 210,70 180,90 Q 160,110 170,140" />
-          <path d="M 210,150 L 140,140 L 70,135 L 22,132" stroke-width="1.8"/>
-          <path d="M 420,180 Q 390,150 350,150 L 300,160" />
-          <circle cx="210" cy="150" r="3"   fill="rgba(220,230,255,0.9)" stroke="none"/>
-          <circle cx="140" cy="140" r="2.6" fill="rgba(220,230,255,0.85)" stroke="none"/>
-          <circle cx="70"  cy="135" r="2.6" fill="rgba(235,240,255,0.95)" stroke="none"/>
-          <circle cx="22"  cy="132" r="3.6" fill="#fff" stroke="none"/>
-        </g>
-      </svg>
-    </div>
+    <!-- 참조 이미지를 좌우 반으로 잘라 보여줌. 각각 안쪽으로 슬라이드해서 -->
+    <!-- 가운데에서 합쳐지면 원본 이미지가 완성되고, 손끝이 닿는 효과가 됨. -->
+    <div class="hand-half left"  id="introHandLeft"></div>
+    <div class="hand-half right" id="introHandRight"></div>
 
     <!-- 가운데 빛 -->
     <div class="ring r1" id="introRing1"></div>
@@ -483,29 +437,16 @@
   if (!intro) return;
   const handL  = document.getElementById('introHandLeft');
   const handR  = document.getElementById('introHandRight');
-  const spark  = document.getElementById('introSpark');
-  const rings  = [
-    document.getElementById('introRing1'),
-    document.getElementById('introRing2'),
-    document.getElementById('introRing3'),
-    document.getElementById('introRing4'),
-  ];
   const flash  = document.getElementById('introFlash');
 
   let done = false;
   const TIMING = {
     approachAt: 2400,  // 두 손이 거의 만남 (마지막 접근 시작)
-    sparkAt:    3500,  // 손끝이 닿는 순간 빛 폭발
-    flashAt:    4500,  // 화이트 플래시
-    endAt:      5400,  // 페이드아웃 시작
+    flashAt:    4200,  // 손끝이 닿는 순간 화이트 플래시
+    endAt:      5200,  // 페이드아웃 시작
   };
 
   setTimeout(() => { if (done) return; handL.classList.add('approach'); handR.classList.add('approach'); }, TIMING.approachAt);
-  setTimeout(() => {
-    if (done) return;
-    spark.classList.add('on');
-    rings.forEach(r => r.classList.add('on'));
-  }, TIMING.sparkAt);
   setTimeout(() => { if (done) return; flash.classList.add('on'); }, TIMING.flashAt);
   setTimeout(() => { if (done) return; endIntro(); }, TIMING.endAt);
 
