@@ -2287,10 +2287,10 @@ const mp = {
   },
 };
 
-// MediaPipe 동적 import + 초기화
+// MediaPipe 동적 import + 초기화 (HandLandmarker + FaceLandmarker)
 async function setupMediaPipe() {
-  setStatus('📷 손 인식 모델 로딩 중…');
-  const { HandLandmarker, FilesetResolver } =
+  setStatus('📷 손 + 머리 인식 모델 로딩 중…');
+  const { HandLandmarker, FaceLandmarker, FilesetResolver } =
     await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm');
   const vision = await FilesetResolver.forVisionTasks(
     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm'
@@ -2303,6 +2303,18 @@ async function setupMediaPipe() {
     },
     runningMode: 'VIDEO',
     numHands: 2,
+  });
+  // FaceLandmarker — facialTransformationMatrixes로 머리 회전 추정
+  mp.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+      delegate: 'GPU',
+    },
+    runningMode: 'VIDEO',
+    numFaces: 1,
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: true,
   });
 }
 
@@ -2501,6 +2513,11 @@ const HAND_MESH_EXTRA = [
 
 let wireScene = null, wireCamera = null, wireRenderer = null;
 const wireHands = []; // [{ group, joints:[21], lines }] × 2
+let wireHead = null;  // 별자리 와이어프레임 머리 (Face 회전 적용)
+// 회전 보간용 — 떨림 줄이기 위해 quaternion slerp
+const _headTargetQuat = new THREE.Quaternion();
+const _headTmpQuat    = new THREE.Quaternion();
+const _headMat4       = new THREE.Matrix4();
 
 function setupWireframeView() {
   if (wireScene) return; // 이미 셋업됨
@@ -2596,6 +2613,71 @@ function setupWireframeView() {
     wireHands.push({ group, joints, lines, meshLines });
   }
 
+  // ── 머리 와이어프레임 ──
+  // 저폴리 구체(icosahedron)를 와이어프레임으로 표시. 추가로 헤드셋 바이저를
+  // 떠올리게 하는 가로 띠 + 정중앙 vertex별을 더해 손과 같은 별자리 톤 유지.
+  wireHead = new THREE.Group();
+  wireHead.visible = false;
+  wireHead.position.set(0, 0, 0); // 화면 중앙. 면 위치는 face 감지로 별도 조정 가능
+
+  const headRadius = 0.28;
+  // 외곽 구체 와이어
+  const headSphereGeo = new THREE.IcosahedronGeometry(headRadius, 2);
+  const headWireGeo   = new THREE.WireframeGeometry(headSphereGeo);
+  // 깊이별 밝기를 위한 vertexColors 준비 (모든 정점을 일단 0.7 회색으로)
+  const headEdgeCount = headWireGeo.attributes.position.count;
+  const headColors = new Float32Array(headEdgeCount * 3);
+  for (let i = 0; i < headEdgeCount * 3; i++) headColors[i] = 0.7;
+  headWireGeo.setAttribute('color', new THREE.BufferAttribute(headColors, 3));
+  const headWire = new THREE.LineSegments(headWireGeo, new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false,
+  }));
+  wireHead.add(headWire);
+
+  // 가운데 vertex(눈 사이) — 헤드셋 바이저 중심 마커
+  const headCore = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 10, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 1.0,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+    })
+  );
+  headCore.position.set(0, 0, headRadius);  // 얼굴 정면 중앙
+  wireHead.add(headCore);
+  const headHalo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: starTex, color: 0xffffff,
+    transparent: true, opacity: 0.7,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false,
+  }));
+  headHalo.position.set(0, 0, headRadius);
+  headHalo.scale.set(0.08, 0.08, 1);
+  wireHead.add(headHalo);
+
+  // 바이저 띠 — 머리 둘레를 수평으로 감싸는 얇은 도넛 (헤드셋 밴드 인상)
+  const visorGeo = new THREE.TorusGeometry(headRadius * 1.01, 0.008, 6, 48);
+  const visorMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false,
+  });
+  const visor = new THREE.Mesh(visorGeo, visorMat);
+  visor.rotation.x = Math.PI / 2;  // XY → XZ 평면 (수평 띠)
+  visor.position.set(0, 0.02, 0);
+  wireHead.add(visor);
+
+  // 머리 정점들의 정점 색을 매 프레임 깊이로 갱신할 데이터를 캐시
+  wireHead.userData.wireGeo = headWireGeo;
+  wireHead.userData.radius  = headRadius;
+  // 매 프레임 vertexColors를 깊이로 업데이트하기 위해 원본 정점 위치 저장
+  wireHead.userData.basePositions = headWireGeo.attributes.position.array.slice();
+
+  wireScene.add(wireHead);
+
   // 창 크기 변경 시 ortho cam·렌더러 갱신
   window.addEventListener('resize', () => {
     if (!wireRenderer) return;
@@ -2604,6 +2686,47 @@ function setupWireframeView() {
     wireCamera.updateProjectionMatrix();
     wireRenderer.setSize(innerWidth, innerHeight);
   });
+}
+
+// MediaPipe FaceLandmarker가 준 4x4 facialTransformationMatrix를 받아
+// 와이어프레임 머리 회전에 적용. matrixData가 null이면 머리 숨김.
+function updateWireframeHead(matrixData){
+  if (!wireHead) return;
+  if (!matrixData) { wireHead.visible = false; return; }
+  wireHead.visible = true;
+  _headMat4.fromArray(matrixData);
+  // 회전만 추출 (위치/스케일 무시 — 머리는 항상 화면 중앙)
+  _headTargetQuat.setFromRotationMatrix(_headMat4);
+  // MediaPipe의 face 모델은 +Z가 카메라 뒤쪽(얼굴 뒤통수)을 향하므로
+  // 그대로 적용하면 뒤집혀 보일 수 있음 → Y축 180도 회전 보정
+  // (즉, MediaPipe 카메라 좌표계 → Three.js 카메라 좌표계)
+  const flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
+  _headTargetQuat.multiply(flip);
+  // 부드럽게 보간 (떨림 완화)
+  wireHead.quaternion.slerp(_headTargetQuat, 0.35);
+
+  // 깊이 기반 vertex color 갱신 — 회전된 wireframe 정점의 z를 기준으로 밝기 조절
+  const wireGeo = wireHead.userData.wireGeo;
+  const base    = wireHead.userData.basePositions;
+  const colors  = wireGeo.attributes.color.array;
+  const q = wireHead.quaternion;
+  // 각 정점을 회전 변환해서 z 추출 (translation 무시)
+  for (let i = 0; i < base.length; i += 3) {
+    const x = base[i], y = base[i+1], z = base[i+2];
+    // q * (x,y,z) — 정점에 quaternion 적용
+    const ix =  q.w*x + q.y*z - q.z*y;
+    const iy =  q.w*y + q.z*x - q.x*z;
+    const iz =  q.w*z + q.x*y - q.y*x;
+    const iw = -q.x*x - q.y*y - q.z*z;
+    // 결과 z만 필요
+    const rz = ix*-q.x + iy*-q.y + iz*q.w + iw*-q.z;
+    // rz 범위 약 -radius..radius. 정규화 → 0(far) ~ 1(near)
+    const r = wireHead.userData.radius;
+    const dn = THREE.MathUtils.clamp((rz / r) * 0.5 + 0.5, 0, 1);
+    const b = 0.25 + dn * 0.75;
+    colors[i] = b; colors[i+1] = b; colors[i+2] = b;
+  }
+  wireGeo.attributes.color.needsUpdate = true;
 }
 
 function updateWireframeView(leftLm, rightLm, currentMode) {
@@ -2736,6 +2859,19 @@ function processWebcamGestures(dt) {
   let result;
   try { result = mp.landmarker.detectForVideo(mp.videoEl, now); }
   catch (e) { return; }
+
+  // 머리 인식 — Face landmarker로 facialTransformationMatrix 추출
+  if (mp.faceLandmarker) {
+    let faceResult = null;
+    try { faceResult = mp.faceLandmarker.detectForVideo(mp.videoEl, now); }
+    catch (e) {}
+    const mats = faceResult?.facialTransformationMatrixes;
+    if (mats && mats.length > 0 && mats[0].data) {
+      updateWireframeHead(mats[0].data);
+    } else {
+      updateWireframeHead(null);
+    }
+  }
 
   const hands = result?.landmarks || [];
   const handed = result?.handednesses || [];
