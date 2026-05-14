@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Universe XR - 태양계 탐험</title>
+<title>ABYSS — 우주 탐험</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@300;500&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff; font-family: system-ui, sans-serif; }
@@ -151,9 +154,257 @@
   }
   #mpWristMenu[hidden] { display: none; }
   #mpWristMenu .row { padding: 4px 0; }
+
+  /* ───────────────────────────────────────────────
+     ABYSS 인트로 화면
+     ─────────────────────────────────────────────── */
+  #introScreen {
+    position: fixed; inset: 0; z-index: 9999;
+    background: radial-gradient(ellipse at center, #050812 0%, #000 70%);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    overflow: hidden;
+    transition: opacity 1.2s ease-out;
+    cursor: pointer;
+    font-family: 'Orbitron', system-ui, sans-serif;
+  }
+  #introScreen.fading { opacity: 0; pointer-events: none; }
+  #introScreen .stars {
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.85), transparent 60%),
+      radial-gradient(1px 1px at 78% 32%, rgba(255,255,255,0.7), transparent 60%),
+      radial-gradient(1px 1px at 28% 72%, rgba(255,255,255,0.55), transparent 60%),
+      radial-gradient(1px 1px at 88% 80%, rgba(255,255,255,0.75), transparent 60%),
+      radial-gradient(1px 1px at 55% 12%, rgba(180,200,255,0.6), transparent 60%),
+      radial-gradient(1px 1px at 8% 55%, rgba(255,255,255,0.5), transparent 60%),
+      radial-gradient(1px 1px at 92% 50%, rgba(200,220,255,0.65), transparent 60%),
+      radial-gradient(1px 1px at 40% 88%, rgba(255,255,255,0.5), transparent 60%),
+      radial-gradient(1.2px 1.2px at 68% 65%, rgba(255,255,255,0.8), transparent 60%);
+    opacity: 0.6;
+    animation: starsTwinkle 6s ease-in-out infinite;
+  }
+  @keyframes starsTwinkle {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 0.85; }
+  }
+  #introScreen .title {
+    position: absolute; top: 12vh;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    opacity: 0;
+    animation: titleIn 1.8s 0.4s ease-out forwards;
+  }
+  #introScreen .title .chev {
+    width: 64px; height: 14px;
+    border-left: 1px solid rgba(255,255,255,0.65);
+    border-right: 1px solid rgba(255,255,255,0.65);
+    border-bottom: 1px solid rgba(255,255,255,0.65);
+    transform: perspective(60px) rotateX(35deg);
+    border-radius: 0 0 50% 50% / 0 0 100% 100%;
+  }
+  #introScreen .title h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 300;
+    font-size: clamp(40px, 7vw, 92px);
+    letter-spacing: 0.55em;
+    padding-left: 0.55em;
+    color: #fff;
+    text-shadow: 0 0 18px rgba(180,210,255,0.35);
+  }
+  #introScreen .title .sub {
+    font-size: 11px; letter-spacing: 0.45em; color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+  }
+  @keyframes titleIn {
+    from { opacity: 0; transform: translateY(-12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* 가운데 합쳐지는 손가락 + 빛 */
+  #introScreen .scene {
+    position: relative;
+    width: min(92vw, 1100px);
+    height: min(55vh, 460px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #introScreen .hand {
+    position: absolute; top: 50%;
+    width: 46%; height: 70%;
+    transform: translateY(-50%);
+  }
+  #introScreen .hand svg {
+    width: 100%; height: 100%; display: block;
+    filter: drop-shadow(0 0 10px rgba(120,160,255,0.18));
+  }
+  #introScreen .hand.left  { left: 0;  animation: handLeftIn  2.4s 0.6s ease-out forwards; opacity: 0; transform: translate(-30px,-50%); }
+  #introScreen .hand.right { right: 0; animation: handRightIn 2.4s 0.6s ease-out forwards; opacity: 0; transform: translate( 30px,-50%); }
+  @keyframes handLeftIn {
+    0%   { opacity: 0; transform: translate(-30px,-50%); }
+    30%  { opacity: 1; }
+    100% { opacity: 1; transform: translate(0,-50%); }
+  }
+  @keyframes handRightIn {
+    0%   { opacity: 0; transform: translate(30px,-50%); }
+    30%  { opacity: 1; }
+    100% { opacity: 1; transform: translate(0,-50%); }
+  }
+  /* 두 손가락이 거의 만나는 마지막 단계 — 살짝 더 안으로 */
+  #introScreen .hand.left.approach  { animation: handLeftApproach  1.4s ease-in forwards; }
+  #introScreen .hand.right.approach { animation: handRightApproach 1.4s ease-in forwards; }
+  @keyframes handLeftApproach {
+    from { transform: translate(0,-50%);    }
+    to   { transform: translate(28px,-50%); }
+  }
+  @keyframes handRightApproach {
+    from { transform: translate(0,-50%);     }
+    to   { transform: translate(-28px,-50%); }
+  }
+
+  /* 가운데 빛 / 동심원 */
+  #introScreen .spark {
+    position: absolute; left: 50%; top: 50%;
+    width: 16px; height: 16px; border-radius: 50%;
+    transform: translate(-50%,-50%) scale(0.2);
+    background: radial-gradient(circle, #fff 0%, rgba(180,210,255,0.9) 40%, rgba(180,210,255,0) 75%);
+    box-shadow: 0 0 30px rgba(200,220,255,0.9), 0 0 80px rgba(150,180,255,0.6);
+    opacity: 0;
+  }
+  #introScreen .spark.on {
+    animation: sparkPop 1.4s ease-out forwards;
+  }
+  @keyframes sparkPop {
+    0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.2); }
+    30%  { opacity: 1; transform: translate(-50%,-50%) scale(1.0); }
+    100% { opacity: 1; transform: translate(-50%,-50%) scale(1.4); }
+  }
+  #introScreen .ring {
+    position: absolute; left: 50%; top: 50%;
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid rgba(200,220,255,0.7);
+    transform: translate(-50%,-50%) scale(0.4);
+    opacity: 0;
+  }
+  #introScreen .ring.on { animation: ringExpand 1.8s ease-out forwards; }
+  #introScreen .ring.r2.on { animation-delay: 0.15s; }
+  #introScreen .ring.r3.on { animation-delay: 0.30s; }
+  #introScreen .ring.r4.on { animation-delay: 0.45s; }
+  @keyframes ringExpand {
+    0%   { opacity: 0;   transform: translate(-50%,-50%) scale(0.4); border-color: rgba(220,235,255,0.9); }
+    20%  { opacity: 0.9; }
+    100% { opacity: 0;   transform: translate(-50%,-50%) scale(10);  border-color: rgba(120,160,255,0.2); }
+  }
+
+  /* 화이트 플래시 — 인트로 종료 직전 */
+  #introScreen .flash {
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at center, #fff 0%, rgba(255,255,255,0) 60%);
+    opacity: 0; pointer-events: none;
+  }
+  #introScreen .flash.on { animation: flashPulse 0.9s ease-out forwards; }
+  @keyframes flashPulse {
+    0%   { opacity: 0; }
+    50%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  #introScreen .skip {
+    position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; letter-spacing: 0.35em; color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    animation: skipBlink 2s ease-in-out infinite;
+  }
+  @keyframes skipBlink {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 0.7; }
+  }
 </style>
 </head>
 <body>
+
+<!-- ─── ABYSS 인트로 화면 ─────────────────────────── -->
+<div id="introScreen" aria-label="ABYSS intro">
+  <div class="stars"></div>
+
+  <div class="title">
+    <div class="chev"></div>
+    <h1>ABYSS</h1>
+    <div class="sub">Touch · Connect · Explore</div>
+  </div>
+
+  <div class="scene">
+    <!-- 왼쪽 손 (와이어프레임 느낌, 검지로 오른쪽 가리킴) -->
+    <div class="hand left" id="introHandLeft">
+      <svg viewBox="0 0 500 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="wireGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%"  stop-color="rgba(140,180,255,0.15)"/>
+            <stop offset="60%" stop-color="rgba(180,210,255,0.7)"/>
+            <stop offset="100%" stop-color="rgba(255,255,255,0.95)"/>
+          </linearGradient>
+        </defs>
+        <g fill="none" stroke="url(#wireGrad)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
+          <!-- 손바닥 외곽 -->
+          <path d="M 40,210 Q 30,160 70,130 L 130,90 Q 160,70 200,80 L 320,140 Q 380,170 420,200 L 470,230" />
+          <!-- 손등 능선 -->
+          <path d="M 60,230 Q 100,200 150,200 L 260,210 Q 340,220 420,220" />
+          <!-- 손가락(나머지, 살짝 접힘) -->
+          <path d="M 200,80 Q 230,40 260,60 Q 280,80 270,120" />
+          <path d="M 230,90 Q 260,50 290,70 Q 310,90 300,130" />
+          <path d="M 260,100 Q 290,70 320,90 Q 340,110 330,140" />
+          <!-- 검지 (앞으로 쭉) -->
+          <path d="M 290,150 L 360,140 L 430,135 L 478,132" stroke-width="1.6"/>
+          <!-- 엄지 (살짝 위) -->
+          <path d="M 80,180 Q 110,150 150,150 L 200,160" />
+          <!-- 격자 (와이어 느낌) -->
+          <path d="M 80,200 L 120,170 M 130,210 L 170,180 M 180,220 L 220,190 M 230,220 L 270,200 M 290,150 L 320,170 M 360,140 L 380,160" stroke-width="0.6" opacity="0.55"/>
+          <!-- 관절 노드 -->
+          <circle cx="290" cy="150" r="3" fill="rgba(200,220,255,0.9)" stroke="none"/>
+          <circle cx="360" cy="140" r="2.4" fill="rgba(200,220,255,0.8)" stroke="none"/>
+          <circle cx="430" cy="135" r="2.4" fill="rgba(220,235,255,0.95)" stroke="none"/>
+          <circle cx="478" cy="132" r="3.4" fill="#fff" stroke="none"/>
+        </g>
+      </svg>
+    </div>
+
+    <!-- 오른쪽 손 (좀 더 부드러운 실루엣, 검지로 왼쪽 가리킴) -->
+    <div class="hand right" id="introHandRight">
+      <svg viewBox="0 0 500 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="skinGrad" x1="1" y1="0" x2="0" y2="0">
+            <stop offset="0%"  stop-color="rgba(120,150,210,0.15)"/>
+            <stop offset="60%" stop-color="rgba(210,225,255,0.7)"/>
+            <stop offset="100%" stop-color="rgba(255,255,255,0.95)"/>
+          </linearGradient>
+        </defs>
+        <g fill="none" stroke="url(#skinGrad)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
+          <!-- 거울 대칭: viewBox 그대로, x 좌표만 반대 -->
+          <path d="M 460,210 Q 470,160 430,130 L 370,90 Q 340,70 300,80 L 180,140 Q 120,170 80,200 L 30,230" />
+          <path d="M 440,230 Q 400,200 350,200 L 240,210 Q 160,220 80,220" />
+          <path d="M 300,80 Q 270,40 240,60 Q 220,80 230,120" />
+          <path d="M 270,90 Q 240,50 210,70 Q 190,90 200,130" />
+          <path d="M 240,100 Q 210,70 180,90 Q 160,110 170,140" />
+          <path d="M 210,150 L 140,140 L 70,135 L 22,132" stroke-width="1.8"/>
+          <path d="M 420,180 Q 390,150 350,150 L 300,160" />
+          <circle cx="210" cy="150" r="3"   fill="rgba(220,230,255,0.9)" stroke="none"/>
+          <circle cx="140" cy="140" r="2.6" fill="rgba(220,230,255,0.85)" stroke="none"/>
+          <circle cx="70"  cy="135" r="2.6" fill="rgba(235,240,255,0.95)" stroke="none"/>
+          <circle cx="22"  cy="132" r="3.6" fill="#fff" stroke="none"/>
+        </g>
+      </svg>
+    </div>
+
+    <!-- 가운데 빛 -->
+    <div class="ring r1" id="introRing1"></div>
+    <div class="ring r2" id="introRing2"></div>
+    <div class="ring r3" id="introRing3"></div>
+    <div class="ring r4" id="introRing4"></div>
+    <div class="spark"   id="introSpark"></div>
+  </div>
+
+  <div class="flash" id="introFlash"></div>
+  <div class="skip">click anywhere to enter</div>
+</div>
+
 <div id="info">
   <b>Universe XR — 태양계 탐험</b><br/>
   • PC: 마우스 드래그 회전, 휠 줌<br/>
@@ -224,6 +475,54 @@
 </div>
 
 <div id="loading">텍스처 로딩 중…</div>
+
+<!-- ─── 인트로 화면 라이프사이클 ──────────────────── -->
+<script>
+(function(){
+  const intro = document.getElementById('introScreen');
+  if (!intro) return;
+  const handL  = document.getElementById('introHandLeft');
+  const handR  = document.getElementById('introHandRight');
+  const spark  = document.getElementById('introSpark');
+  const rings  = [
+    document.getElementById('introRing1'),
+    document.getElementById('introRing2'),
+    document.getElementById('introRing3'),
+    document.getElementById('introRing4'),
+  ];
+  const flash  = document.getElementById('introFlash');
+
+  let done = false;
+  const TIMING = {
+    approachAt: 2400,  // 두 손이 거의 만남 (마지막 접근 시작)
+    sparkAt:    3500,  // 손끝이 닿는 순간 빛 폭발
+    flashAt:    4500,  // 화이트 플래시
+    endAt:      5400,  // 페이드아웃 시작
+  };
+
+  setTimeout(() => { if (done) return; handL.classList.add('approach'); handR.classList.add('approach'); }, TIMING.approachAt);
+  setTimeout(() => {
+    if (done) return;
+    spark.classList.add('on');
+    rings.forEach(r => r.classList.add('on'));
+  }, TIMING.sparkAt);
+  setTimeout(() => { if (done) return; flash.classList.add('on'); }, TIMING.flashAt);
+  setTimeout(() => { if (done) return; endIntro(); }, TIMING.endAt);
+
+  function endIntro(){
+    if (done) return;
+    done = true;
+    intro.classList.add('fading');
+    setTimeout(() => intro.remove(), 1400);
+  }
+
+  // 클릭/키보드로 스킵 (시연 중 유용)
+  intro.addEventListener('click', endIntro);
+  window.addEventListener('keydown', (e) => {
+    if (!done && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) endIntro();
+  }, { once: false });
+})();
+</script>
 
 <script type="importmap">
 {
