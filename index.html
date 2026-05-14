@@ -65,6 +65,42 @@
     background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 6px;
     font-size: 12px;
   }
+  #searchBox {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 15; width: 340px;
+  }
+  #searchInput {
+    width: 100%; background: rgba(0,0,0,0.75); color: #fff;
+    border: 1px solid #555; border-radius: 999px;
+    padding: 9px 16px; font-size: 13px; outline: none;
+    backdrop-filter: blur(4px);
+  }
+  #searchInput:focus { border-color: #1a73e8; background: rgba(0,0,0,0.85); }
+  #searchInput::placeholder { color: #999; }
+  #searchResults {
+    margin-top: 6px; background: rgba(15,18,28,0.97);
+    border: 1px solid #444; border-radius: 10px;
+    max-height: 360px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  #searchResults[hidden] { display: none; }
+  #searchResults .item {
+    padding: 8px 12px; cursor: pointer; font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid #222;
+  }
+  #searchResults .item:last-child { border-bottom: 0; }
+  #searchResults .item:hover, #searchResults .item.active {
+    background: rgba(26, 115, 232, 0.25);
+  }
+  #searchResults .item .type {
+    font-size: 10px; color: #aac6ff;
+    background: rgba(26, 115, 232, 0.2);
+    padding: 2px 7px; border-radius: 4px; white-space: nowrap; margin-left: 8px;
+  }
+  #searchResults .empty {
+    padding: 14px; text-align: center; color: #888; font-size: 12px;
+  }
 </style>
 </head>
 <body>
@@ -115,6 +151,11 @@
     <span>자유 대화 모드 — 인식되지 않은 말은 Gemini에게 물어보고 자연스럽게 답변</span>
   </label>
   <button class="test" id="testVoice">🔊 이 목소리로 테스트</button>
+</div>
+
+<div id="searchBox">
+  <input type="text" id="searchInput" placeholder="🔍 검색 (예: 지구, 타이탄, 오리온자리)" autocomplete="off" />
+  <div id="searchResults" hidden></div>
 </div>
 
 <div id="loading">텍스처 로딩 중…</div>
@@ -182,12 +223,22 @@ scene.add(player);
 const HOME_CAM = camera.position.clone();
 const HOME_TARGET = controls.target.clone();
 
-// 카메라 자동 추적 상태 ─ 'earth', 'sun', 'home', 또는 null
+// 카메라 자동 추적 상태 ─ 'earth', 'sun', 'home', 'moon', 'aim', 또는 null
 let followKey = null;
 // 행성의 로컬 좌표계에서의 카메라 오프셋 (자전을 따라가기 위해)
 let followLocalOffset = null;
-// 사용자가 직접 조작하면 추적 해제
-controls.addEventListener('start', () => { followKey = null; followLocalOffset = null; });
+// 위성 추적 시 대상 mesh
+let followMoonMesh = null;
+// 방향 조준 (별자리) 대상 좌표
+let followAim = null;
+
+// 사용자가 직접 조작하면 모든 추적 해제
+controls.addEventListener('start', () => {
+  followKey = null;
+  followLocalOffset = null;
+  followMoonMesh = null;
+  followAim = null;
+});
 
 // ─── 텍스처 로더 (진행률 표시) ───────────────────────
 const manager = new THREE.LoadingManager();
@@ -1048,6 +1099,9 @@ const constellationsGroup = new THREE.Group();      // 선 + 라벨 (토글)
 constellationsGroup.visible = false;
 scene.add(constellationsGroup);
 
+// 검색용 별자리 목록 (id, 한국어/영문 이름, 중심 좌표)
+const constellationItems = [];
+
 // 비동기로 카탈로그·별자리 데이터 로드
 Promise.all([
   fetch(CONST_DATA + 'stars.6.json').then(r => r.json()),
@@ -1112,6 +1166,13 @@ function buildConstellationLines(features) {
     const label = makeLabel(name, '#bce4ff', { factor: 0.03, min: 3, max: 180 });
     label.position.set(cx, cy, cz);
     constellationsGroup.add(label);
+    // 검색 인덱스에 등록
+    constellationItems.push({
+      id,
+      krName: name,
+      enName: c.properties?.name || id,
+      position: new THREE.Vector3(cx, cy, cz),
+    });
     count++;
   }
   const geo = new THREE.BufferGeometry();
@@ -1195,6 +1256,8 @@ const _invQuat = new THREE.Quaternion();
 function setFollow(key) {
   followKey = key;
   followLocalOffset = null;
+  followMoonMesh = null;
+  followAim = null;
   if (key === 'home' || key === 'sun') return;
   const mesh = planetMeshes[key];
   if (!mesh) return;
@@ -1211,6 +1274,22 @@ function setFollow(key) {
   followLocalOffset.applyQuaternion(_invQuat);
 }
 
+// 위성으로 비행. 위성은 매 프레임 위치가 바뀌므로 mesh 자체를 추적.
+function setFollowMoon(moonMesh) {
+  followKey = 'moon';
+  followMoonMesh = moonMesh;
+  followLocalOffset = null;
+  followAim = null;
+}
+
+// 별자리 등 먼 곳의 한 점을 '바라봄'. 카메라 위치는 안 움직이고 방향만 회전.
+function setFollowAim(pos) {
+  followKey = 'aim';
+  followAim = pos.clone();
+  followLocalOffset = null;
+  followMoonMesh = null;
+}
+
 function computeFollowPose(key, outTarget, outLook) {
   if (key === 'home') {
     outTarget.copy(HOME_CAM);
@@ -1222,6 +1301,25 @@ function computeFollowPose(key, outTarget, outLook) {
     outTarget.copy(sunCenter).add(_fromSun.multiplyScalar(260));
     outTarget.y += 40;
     outLook.copy(sunCenter);
+    return true;
+  }
+  if (key === 'moon') {
+    if (!followMoonMesh) return false;
+    const r = followMoonMesh.geometry.parameters.radius;
+    _fromSun.copy(followMoonMesh.position).sub(sunCenter).normalize();
+    const dist = r * 6 + 4;
+    outTarget.copy(followMoonMesh.position).addScaledVector(_fromSun, dist);
+    outTarget.y += r * 0.5;
+    outLook.copy(followMoonMesh.position);
+    return true;
+  }
+  if (key === 'aim') {
+    if (!followAim) return false;
+    // 카메라는 그대로, 카메라 앞쪽 50 단위에 target만 옮겨 방향만 회전
+    camera.getWorldPosition(_camWorld);
+    outTarget.copy(_camWorld);
+    _fromSun.copy(followAim).sub(_camWorld).normalize();
+    outLook.copy(_camWorld).addScaledVector(_fromSun, 50);
     return true;
   }
   const mesh = planetMeshes[key];
@@ -1705,6 +1803,143 @@ if (!SR) {
     } else { listening = false; recog.stop(); }
   });
 }
+
+// ─── 검색 (행성 / 위성 / 별자리 / 태양) ───────────────
+const searchInput   = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+let _searchCurrent  = [];
+let _searchActive   = -1;
+
+function doSearch(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) { searchResults.hidden = true; _searchCurrent = []; return; }
+
+  const results = [];
+
+  // 태양
+  if ('태양 sun 항성 해 sol'.split(' ').some(w => w.includes(q) || q.includes(w))) {
+    if (q.length <= 4) results.push({ type: 'sun', label: '태양 (Sun)', sub: '항성' });
+  }
+
+  // 행성
+  for (const p of PLANETS) {
+    const hay = (p.name + ' ' + p.key).toLowerCase();
+    if (hay.includes(q)) {
+      results.push({ type: 'planet', label: p.name, sub: '행성', key: p.key });
+    }
+  }
+
+  // 위성
+  for (const m of allMoons) {
+    const en = m.userData.name;
+    const kr = MOON_KR[en] || en;
+    if (en.toLowerCase().includes(q) || kr.toLowerCase().includes(q)) {
+      results.push({
+        type: 'moon',
+        label: `${kr} (${en})`,
+        sub: `${m.userData.planet}의 위성`,
+        moon: m,
+      });
+    }
+  }
+
+  // 별자리 (데이터 로드 후 채워짐)
+  for (const c of constellationItems) {
+    if (
+      c.krName.toLowerCase().includes(q) ||
+      c.enName.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q)
+    ) {
+      results.push({
+        type: 'constellation',
+        label: c.krName,
+        sub: '별자리',
+        position: c.position,
+      });
+    }
+  }
+
+  _searchCurrent = results.slice(0, 12);
+  _searchActive  = -1;
+  renderSearchResults();
+}
+
+function renderSearchResults() {
+  if (_searchCurrent.length === 0) {
+    searchResults.innerHTML = '<div class="empty">검색 결과 없음</div>';
+    searchResults.hidden = false;
+    return;
+  }
+  searchResults.hidden = false;
+  searchResults.innerHTML = '';
+  _searchCurrent.forEach((r, i) => {
+    const div = document.createElement('div');
+    div.className = 'item' + (i === _searchActive ? ' active' : '');
+    div.innerHTML = `<span>${r.label}</span><span class="type">${r.sub}</span>`;
+    div.addEventListener('mousedown', (e) => { e.preventDefault(); selectSearchResult(i); });
+    searchResults.appendChild(div);
+  });
+}
+
+function navigateToResult(r) {
+  setVisibility('all');
+  switch (r.type) {
+    case 'sun':
+      setFollow('sun');
+      setStatus(`🔍 → 태양`);
+      break;
+    case 'planet':
+      setFollow(r.key);
+      setStatus(`🔍 → ${r.label}`);
+      break;
+    case 'moon':
+      setFollowMoon(r.moon);
+      setStatus(`🔍 → ${r.label}`);
+      break;
+    case 'constellation':
+      setFollowAim(r.position);
+      setConstellations(true);
+      setStatus(`🔍 → ${r.label} 방향`);
+      break;
+  }
+}
+
+function selectSearchResult(i) {
+  const r = _searchCurrent[i];
+  if (!r) return;
+  navigateToResult(r);
+  searchInput.value = '';
+  searchResults.hidden = true;
+  searchInput.blur();
+}
+
+searchInput.addEventListener('input', e => doSearch(e.target.value));
+searchInput.addEventListener('focus', () => { if (_searchCurrent.length > 0) searchResults.hidden = false; });
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _searchActive = Math.min(_searchActive + 1, _searchCurrent.length - 1);
+    renderSearchResults();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _searchActive = Math.max(_searchActive - 1, 0);
+    renderSearchResults();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (_searchActive >= 0) selectSearchResult(_searchActive);
+    else if (_searchCurrent.length > 0) selectSearchResult(0);
+  } else if (e.key === 'Escape') {
+    searchInput.value = '';
+    searchResults.hidden = true;
+    searchInput.blur();
+  }
+});
+// 검색창 바깥 클릭 시 결과 숨김
+document.addEventListener('mousedown', e => {
+  if (e.target !== searchInput && !searchResults.contains(e.target)) {
+    searchResults.hidden = true;
+  }
+});
 
 // ─── 리사이즈 ────────────────────────────────────────
 addEventListener('resize', () => {
