@@ -379,7 +379,7 @@ const PLANETS = [
     bump:   TEX_EARTH + 'elev_bump_4k.jpg',
     clouds: TEX_EARTH + 'fair_clouds_4k.png',
     spec:   'earthspec1k.jpg', // 1k threex 그대로 (4k 호환 spec map이 없어서)
-    atmosphere: { color: 0x6699ff, scale: 1.04, intensity: 0.9 },
+    atmosphere: { color: 0x6699ff, scale: 1.025, intensity: 0.45, power: 4.0 },
     orbit: 350,  speed: 0.11, axisTilt: 0.41, spin: 0.6,  labelColor: '#7fb8ff',
     moons: [
       { name: 'Moon', radius: 3.0, distance: 32, speed: 0.4,
@@ -501,18 +501,24 @@ for (const p of PLANETS) {
     mesh.userData.cloudsMesh = clouds;
   }
 
-  // 대기 글로우 (Fresnel 셰이더 — 가장자리에서 강하게 빛남)
+  // 대기 글로우 (Fresnel + 태양 방향 의존 — 낮 쪽만 밝음)
   if (p.atmosphere) {
     const atmoMat = new THREE.ShaderMaterial({
       uniforms: {
         glowColor: { value: new THREE.Color(p.atmosphere.color) },
-        intensity: { value: p.atmosphere.intensity ?? 1.0 },
+        intensity: { value: p.atmosphere.intensity ?? 0.5 },
+        power:     { value: p.atmosphere.power ?? 4.0 },
+        sunPos:    { value: sunCenter.clone() },
       },
       vertexShader: `
-        varying vec3 vNormal;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPos;
         varying vec3 vView;
         void main() {
-          vNormal = normalize(normalMatrix * normal);
+          // 월드 공간 법선·위치 (행성 mesh가 회전해도 일관)
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           vView = -mv.xyz;
           gl_Position = projectionMatrix * mv;
@@ -521,13 +527,22 @@ for (const p of PLANETS) {
       fragmentShader: `
         uniform vec3 glowColor;
         uniform float intensity;
-        varying vec3 vNormal;
+        uniform float power;
+        uniform vec3 sunPos;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPos;
         varying vec3 vView;
         void main() {
           vec3 v = normalize(vView);
-          float rim = 1.0 - max(dot(vNormal, v), 0.0);
-          rim = pow(rim, 2.5);
-          gl_FragColor = vec4(glowColor, rim * intensity);
+          // Fresnel rim: 실루엣 가장자리에서 최대
+          float rim = 1.0 - max(dot(normalize(vWorldNormal), normalize(cameraPosition - vWorldPos)), 0.0);
+          rim = pow(rim, power);
+          // 태양 방향 의존: 그 지점이 햇빛 받는 정도. 어두운 쪽은 거의 0.
+          vec3 sunDir = normalize(sunPos - vWorldPos);
+          float sunLit = max(dot(normalize(vWorldNormal), sunDir), 0.0);
+          // 부드러운 경계 (terminator)
+          sunLit = smoothstep(0.0, 0.5, sunLit);
+          gl_FragColor = vec4(glowColor, rim * intensity * sunLit);
         }
       `,
       side: THREE.BackSide,
@@ -536,7 +551,7 @@ for (const p of PLANETS) {
       depthWrite: false,
     });
     const atmo = new THREE.Mesh(
-      new THREE.SphereGeometry(p.radius * (p.atmosphere.scale ?? 1.04), 64, 64),
+      new THREE.SphereGeometry(p.radius * (p.atmosphere.scale ?? 1.025), 64, 64),
       atmoMat
     );
     mesh.add(atmo);
