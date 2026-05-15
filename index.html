@@ -2406,7 +2406,7 @@ async function setupMediaPipe() {
     runningMode: 'VIDEO',
     numHands: 2,
   });
-  // FaceLandmarker — facialTransformationMatrixes로 머리 회전 추정
+  // FaceLandmarker — 478개 랜드마크 + 4x4 변환 매트릭스
   mp.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath:
@@ -2418,6 +2418,8 @@ async function setupMediaPipe() {
     outputFaceBlendshapes: false,
     outputFacialTransformationMatrixes: true,
   });
+  // 얼굴 메시 toleration — 2600+ 라인. 매 프레임 이걸로 detailed wireframe 그림
+  mp.FACE_TESSELATION = FaceLandmarker.FACE_LANDMARKS_TESSELATION;
 }
 
 async function startWebcamHands() {
@@ -2617,6 +2619,7 @@ const HAND_MESH_EXTRA = [
 let wireScene = null, wireCamera = null, wireRenderer = null;
 const wireHands = []; // [{ group, joints:[21], lines }] × 2
 let wireHead = null;  // 별자리 와이어프레임 머리 (Face 회전 적용)
+let faceMeshLines = null; // 실시간 얼굴 메시 (MediaPipe 478 랜드마크 + tessellation)
 // 회전 보간용 — 떨림 줄이기 위해 quaternion slerp
 const _headTargetQuat = new THREE.Quaternion();
 const _headTmpQuat    = new THREE.Quaternion();
@@ -2811,6 +2814,7 @@ function setupWireframeView() {
   // 머리 정점들의 정점 색을 매 프레임 깊이로 갱신할 데이터를 캐시
   wireHead.userData.wireGeo = headWireGeo;
   wireHead.userData.radius  = headRadius;
+  wireHead.userData.headWire = headWire;  // 라이브 face mesh와 토글하기 위해 보관
   // 매 프레임 vertexColors를 깊이로 업데이트하기 위해 원본 정점 위치 저장
   wireHead.userData.basePositions = headWireGeo.attributes.position.array.slice();
 
@@ -2826,51 +2830,130 @@ function setupWireframeView() {
   });
 }
 
-// MediaPipe FaceLandmarker가 준 4x4 facialTransformationMatrix를 받아
-// 와이어프레임 머리 회전에 적용. matrixData가 null이면 머리 숨김.
-// 캘리브레이션 화면에서만 보이도록 window.__showCalibHead 플래그 체크.
-function updateWireframeHead(matrixData){
+// MediaPipe FaceLandmarker 결과를 받아 두 종류 렌더링:
+//   1. wireHead 그룹 (icosahedron + visor + lenses)을 4x4 변환 매트릭스로 회전
+//   2. 478 랜드마크를 tessellation 토폴로지로 연결한 라이브 face mesh
+// faceLandmarks/matrixData가 null이고 캘리브레이션 화면이 아니면 모두 숨김.
+function updateWireframeHead(faceLandmarks, matrixData){
   if (!wireHead) return;
-  if (!window.__showCalibHead || !matrixData) {
+  const showCalib = window.__showCalibHead;
+  const haveFace  = !!(faceLandmarks && faceLandmarks.length > 0);
+  const haveMat   = !!matrixData;
+
+  if (!showCalib || !(haveFace || haveMat)) {
     wireHead.visible = false;
+    if (faceMeshLines) faceMeshLines.visible = false;
     return;
   }
-  wireHead.visible = true;
   // 첫 검출 시 캘리브레이션 화면에 알림
   if (window.__abyssFaceSeen) { window.__abyssFaceSeen(); window.__abyssFaceSeen = null; }
-  _headMat4.fromArray(matrixData);
-  // 회전만 추출 (위치/스케일 무시 — 머리는 항상 화면 중앙)
-  _headTargetQuat.setFromRotationMatrix(_headMat4);
-  // MediaPipe의 face 모델은 +Z가 카메라 뒤쪽(얼굴 뒤통수)을 향하므로
-  // 그대로 적용하면 뒤집혀 보일 수 있음 → Y축 180도 회전 보정
-  // (즉, MediaPipe 카메라 좌표계 → Three.js 카메라 좌표계)
-  const flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
-  _headTargetQuat.multiply(flip);
-  // 부드럽게 보간 (떨림 완화)
-  wireHead.quaternion.slerp(_headTargetQuat, 0.35);
 
-  // 깊이 기반 vertex color 갱신 — 회전된 wireframe 정점의 z를 기준으로 밝기 조절
-  const wireGeo = wireHead.userData.wireGeo;
-  const base    = wireHead.userData.basePositions;
-  const colors  = wireGeo.attributes.color.array;
-  const q = wireHead.quaternion;
-  // 각 정점을 회전 변환해서 z 추출 (translation 무시)
-  for (let i = 0; i < base.length; i += 3) {
-    const x = base[i], y = base[i+1], z = base[i+2];
-    // q * (x,y,z) — 정점에 quaternion 적용
-    const ix =  q.w*x + q.y*z - q.z*y;
-    const iy =  q.w*y + q.z*x - q.x*z;
-    const iz =  q.w*z + q.x*y - q.y*x;
-    const iw = -q.x*x - q.y*y - q.z*z;
-    // 결과 z만 필요
-    const rz = ix*-q.x + iy*-q.y + iz*q.w + iw*-q.z;
-    // rz 범위 약 -radius..radius. 정규화 → 0(far) ~ 1(near)
-    const r = wireHead.userData.radius;
-    const dn = THREE.MathUtils.clamp((rz / r) * 0.5 + 0.5, 0, 1);
-    const b = 0.25 + dn * 0.75;
-    colors[i] = b; colors[i+1] = b; colors[i+2] = b;
+  // ── wireHead (visor + lenses + icosahedron) 회전 (매트릭스 기반) ──
+  if (haveMat) {
+    wireHead.visible = true;
+    _headMat4.fromArray(matrixData);
+    _headTargetQuat.setFromRotationMatrix(_headMat4);
+    const flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
+    _headTargetQuat.multiply(flip);
+    wireHead.quaternion.slerp(_headTargetQuat, 0.35);
+
+    // icosahedron은 라이브 face mesh가 있으면 숨김 (디테일 메시가 대체)
+    if (wireHead.userData.headWire) {
+      wireHead.userData.headWire.visible = !haveFace;
+    }
+
+    // icosahedron 깊이 셰이딩 (안 보이면 스킵)
+    if (wireHead.userData.headWire?.visible) {
+      const wireGeo = wireHead.userData.wireGeo;
+      const base    = wireHead.userData.basePositions;
+      const colors  = wireGeo.attributes.color.array;
+      const q = wireHead.quaternion;
+      for (let i = 0; i < base.length; i += 3) {
+        const x = base[i], y = base[i+1], z = base[i+2];
+        const ix =  q.w*x + q.y*z - q.z*y;
+        const iy =  q.w*y + q.z*x - q.x*z;
+        const iz =  q.w*z + q.x*y - q.y*x;
+        const iw = -q.x*x - q.y*y - q.z*z;
+        const rz = ix*-q.x + iy*-q.y + iz*q.w + iw*-q.z;
+        const r = wireHead.userData.radius;
+        const dn = THREE.MathUtils.clamp((rz / r) * 0.5 + 0.5, 0, 1);
+        const b = 0.25 + dn * 0.75;
+        colors[i] = b; colors[i+1] = b; colors[i+2] = b;
+      }
+      wireGeo.attributes.color.needsUpdate = true;
+    }
+  } else {
+    wireHead.visible = false;
   }
-  wireGeo.attributes.color.needsUpdate = true;
+
+  // ── 라이브 face mesh (478 랜드마크 + tessellation) ──
+  if (haveFace && mp.FACE_TESSELATION) {
+    // 첫 사용 시 LineSegments 생성 (lazy)
+    if (!faceMeshLines) {
+      const conns = mp.FACE_TESSELATION;
+      const positions = new Float32Array(conns.length * 2 * 3);
+      const colors    = new Float32Array(conns.length * 2 * 3);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true, opacity: 0.7,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false, depthTest: false,
+      });
+      faceMeshLines = new THREE.LineSegments(geo, mat);
+      wireScene.add(faceMeshLines);
+    }
+    faceMeshLines.visible = true;
+
+    // 안정적인 스케일을 위해 두 눈 외각(33, 263) 사이 거리 기준으로 정규화
+    const lmL = faceLandmarks[33];
+    const lmR = faceLandmarks[263];
+    const eyeDist = Math.hypot(lmR.x - lmL.x, lmR.y - lmL.y);
+    const TARGET_EYE_DIST = 0.20;   // ortho 단위
+    const SCALE = TARGET_EYE_DIST / Math.max(eyeDist, 0.001);
+
+    // 모든 랜드마크 평균(centroid)으로 중심 정렬
+    let cx = 0, cy = 0, cz = 0;
+    for (let i = 0; i < faceLandmarks.length; i++) {
+      cx += faceLandmarks[i].x;
+      cy += faceLandmarks[i].y;
+      cz += faceLandmarks[i].z;
+    }
+    cx /= faceLandmarks.length;
+    cy /= faceLandmarks.length;
+    cz /= faceLandmarks.length;
+
+    const conns = mp.FACE_TESSELATION;
+    const pos = faceMeshLines.geometry.attributes.position.array;
+    const col = faceMeshLines.geometry.attributes.color.array;
+    // z 폭이 좁아서 평면적으로 보이는 걸 보정 — z만 가중치 ↑
+    const Z_BOOST = 3.0;
+    for (let i = 0; i < conns.length; i++) {
+      const c = conns[i];
+      const a = faceLandmarks[c.start];
+      const b = faceLandmarks[c.end];
+      // 이미지→스크린 좌표 매핑: x mirror, y flip, z flip + boost
+      const ax = (cx - a.x) * SCALE;
+      const ay = (cy - a.y) * SCALE;
+      const az = (cz - a.z) * SCALE * Z_BOOST;
+      const bx = (cx - b.x) * SCALE;
+      const by = (cy - b.y) * SCALE;
+      const bz = (cz - b.z) * SCALE * Z_BOOST;
+      pos[i*6]   = ax; pos[i*6+1] = ay; pos[i*6+2] = az;
+      pos[i*6+3] = bx; pos[i*6+4] = by; pos[i*6+5] = bz;
+      // 깊이 기반 밝기 — 카메라 가까울수록 밝게
+      const ba = THREE.MathUtils.clamp(0.25 + (az + 0.15) * 2.5, 0.1, 1.0);
+      const bb = THREE.MathUtils.clamp(0.25 + (bz + 0.15) * 2.5, 0.1, 1.0);
+      col[i*6]   = ba; col[i*6+1] = ba; col[i*6+2] = ba;
+      col[i*6+3] = bb; col[i*6+4] = bb; col[i*6+5] = bb;
+    }
+    faceMeshLines.geometry.attributes.position.needsUpdate = true;
+    faceMeshLines.geometry.attributes.color.needsUpdate = true;
+  } else {
+    if (faceMeshLines) faceMeshLines.visible = false;
+  }
 }
 
 function updateWireframeView(leftLm, rightLm, currentMode) {
@@ -3095,14 +3178,12 @@ function processWebcamGestures(dt) {
     let faceResult = null;
     try { faceResult = mp.faceLandmarker.detectForVideo(mp.videoEl, now); }
     catch (e) {}
+    const fls  = faceResult?.faceLandmarks?.[0] || null;
     const mats = faceResult?.facialTransformationMatrixes;
-    if (mats && mats.length > 0 && mats[0].data) {
-      updateWireframeHead(mats[0].data);
-    } else {
-      updateWireframeHead(null);
-    }
+    const mat  = (mats && mats.length > 0 && mats[0].data) || null;
+    updateWireframeHead(fls, mat);
   } else {
-    updateWireframeHead(null);    // 항상 head를 숨김 상태로 강제
+    updateWireframeHead(null, null);    // 항상 head를 숨김 상태로 강제
   }
 
   const hands = result?.landmarks || [];
