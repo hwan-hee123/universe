@@ -645,7 +645,7 @@
   <div class="row"><b>🤚 손 제스처 사용법</b></div>
   <div class="row" style="color:#999;font-size:11px">왼손 손가락 끝 꼬집어 모드 선택</div>
   <div class="row"><span style="color:#ff6688">●</span> 엄지 끝 → <b>A 선택</b></div>
-  <div class="row"><span style="color:#66aaff">●</span> 검지 끝 → <b>D 줌</b> (↑↓)</div>
+  <div class="row"><span style="color:#66aaff">●</span> 검지 끝 → <b>D 둘러보기</b> (↔↕)</div>
   <div class="row"><span style="color:#88ff88">●</span> 중지 끝 → <b>B 비행</b></div>
   <div class="row" style="color:#999;font-size:11px;margin-top:6px">그 후 오른손 핀치로 액션 실행</div>
 </div>
@@ -2832,7 +2832,7 @@ function markFired(idx, g) {
 // 왼손 손가락 끝을 오른손으로 한 번 핀치 → 오른손이 그 모드가 됨
 // 그 후 오른손 핀치(왼손과 떨어진 공중) → 그 모드의 액션 실행
 //   왼손 엄지 끝(4)  → A 선택 모드
-//   왼손 검지 끝(8)  → D 줌 모드
+//   왼손 검지 끝(8)  → D 둘러보기 모드 (orbit drag)
 //   왼손 중지 끝(12) → B 비행 모드
 const FINGER_PINCH_DIST = 0.08;     // 왼손 손가락 끝과 오른손 핀치 위치의 허용 거리
 const ACTION_COOLDOWN_A = 500;       // A 선택 쿨다운
@@ -2840,8 +2840,13 @@ const fingerMenu = {
   mode: null,            // 'A' | 'D' | 'B' | null  (현재 오른손이 어떤 모드인가)
   rPinchPrev: false,     // 직전 프레임 오른손 핀치 여부 (edge detection)
   lastFireA: 0,          // A 마지막 발동 시각
-  prevRightY: null,      // D 줌 델타 계산
+  prevRightX: null,      // D 둘러보기 가로 델타 계산
+  prevRightY: null,      // D 둘러보기 세로 델타 계산
 };
+
+// D 둘러보기 — 카메라 orbit 계산용 재사용 객체
+const _orbitOffset    = new THREE.Vector3();
+const _orbitSpherical = new THREE.Spherical();
 
 // 캔버스 오버레이 (웹캠 미리보기 위에 손가락 라벨 그림)
 const mpOverlay = document.getElementById('mpOverlay');
@@ -3375,7 +3380,7 @@ function processWebcamGestures(dt) {
     mp.tag.textContent = `모드: ${modeLabel(fingerMenu.mode)} — 손 없음`;
     updateWireframeView(null, null, fingerMenu.mode);
     fingerMenu.rPinchPrev = false;
-    fingerMenu.prevRightY = null;
+    fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
     return;
   }
 
@@ -3406,7 +3411,7 @@ function processWebcamGestures(dt) {
     mp.cursor.hidden = true;
     mp.tag.textContent = `모드: ${modeLabel(fingerMenu.mode)} — 오른손 보여주세요`;
     fingerMenu.rPinchPrev = false;
-    fingerMenu.prevRightY = null;
+    fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
     return;
   }
 
@@ -3438,7 +3443,7 @@ function processWebcamGestures(dt) {
   if (justPinched && onFinger) {
     fingerMenu.mode = onFinger;
     setStatus(`🤚 모드 변경: ${modeLabel(onFinger)}`);
-    fingerMenu.prevRightY = null;
+    fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
   }
 
   // ── 모드별 액션: 오른손이 왼손에서 떨어진 공중에서 핀치할 때 ──
@@ -3460,14 +3465,35 @@ function processWebcamGestures(dt) {
     }
     mp.tag.textContent = `A 선택 모드 — 핀치 ✓`;
   } else if (freePinch && fingerMenu.mode === 'D') {
-    // D 줌 — y 델타 = 전후 추진
-    if (fingerMenu.prevRightY !== null) {
+    // D 둘러보기 — 핀치 드래그로 controls.target 중심 카메라 orbit
+    // (마우스 좌클릭 드래그와 같은 동작: 손 ↔ ↕ 움직임 → 시야 회전)
+    if (fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
+      const dx = rPos.x - fingerMenu.prevRightX;
       const dy = rPos.y - fingerMenu.prevRightY;
-      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-      camera.position.addScaledVector(fwd, -dy * 8000);
+
+      // Follow 모드 해제 (orbit과 follow가 충돌하므로)
+      followKey = null; followLocalOffset = null;
+      followMoonMesh = null; followAim = null; followGalaxyGroup = null;
+
+      // 카메라 위치를 target 기준 구면좌표로 변환
+      _orbitOffset.subVectors(camera.position, controls.target);
+      _orbitSpherical.setFromVector3(_orbitOffset);
+
+      // 손 움직임 → 회전. 감도 6 (정규화 좌표 0~1 기준)
+      const ROT_SENS = 6;
+      _orbitSpherical.theta += dx * ROT_SENS;
+      _orbitSpherical.phi   += dy * ROT_SENS;
+      // phi 클램프 — 위/아래 끝에서 카메라 뒤집힘 방지
+      _orbitSpherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, _orbitSpherical.phi));
+
+      // 새 카메라 위치 = target + 회전된 offset
+      _orbitOffset.setFromSpherical(_orbitSpherical);
+      camera.position.copy(controls.target).add(_orbitOffset);
+      camera.lookAt(controls.target);
     }
+    fingerMenu.prevRightX = rPos.x;
     fingerMenu.prevRightY = rPos.y;
-    mp.tag.textContent = `D 줌 모드 — 핀치 ✓ ↑↓`;
+    mp.tag.textContent = `D 둘러보기 — 핀치 드래그 ↔ ↕`;
   } else if (freePinch && fingerMenu.mode === 'B') {
     // B 비행 — 카메라 전방으로 지속 이동
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -3477,7 +3503,7 @@ function processWebcamGestures(dt) {
     mp.tag.textContent = `B 비행 모드 — 핀치 ✓ ✊→`;
   } else {
     // 액션 비활성 상태
-    fingerMenu.prevRightY = null;
+    fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
     if (onFinger) {
       mp.tag.textContent = `모드 변경 중: ${modeLabel(onFinger)}`;
     } else {
@@ -3490,7 +3516,7 @@ function processWebcamGestures(dt) {
 
 function modeLabel(m) {
   if (m === 'A') return 'A 선택';
-  if (m === 'D') return 'D 줌';
+  if (m === 'D') return 'D 둘러보기';
   if (m === 'B') return 'B 비행';
   return '미선택';
 }
