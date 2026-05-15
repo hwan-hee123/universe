@@ -619,19 +619,20 @@
   #isolationInfo .info-card.pos-bottom-left  { bottom: 14%; left:  calc(6% + 240px); animation-delay: 0.5s; }
   #isolationInfo .info-card.pos-bottom-right { bottom: 14%; right: calc(6% + 240px); animation-delay: 0.7s; }
 
-  /* ─── 고립 모드 나가기 버튼 (좌상단, 핀치로 작동) ─── */
+  /* ─── 고립 모드 나가기 버튼 (행성/태양 아래 중앙, 핀치로 작동) ─── */
   #exitIsolationBtn {
-    position: fixed; top: 5%; left: 5%;
+    position: fixed; bottom: 6%; left: 50%;
+    transform: translateX(-50%);
     z-index: 15;
-    background: rgba(15,18,28,0.7);
+    background: rgba(15,18,28,0.75);
     color: rgba(255,255,255,0.92);
-    border: 1px solid rgba(255,255,255,0.25);
+    border: 1px solid rgba(255,255,255,0.28);
     border-radius: 999px;
-    padding: 10px 22px;
+    padding: 10px 24px;
     font-family: 'Orbitron', sans-serif;
     font-size: 12px;
-    letter-spacing: 0.25em;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    letter-spacing: 0.28em;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.55);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     pointer-events: none;
@@ -4001,11 +4002,11 @@ function processWebcamGestures(dt) {
       return;
     }
 
-    // 2) 좌상단 "나가기" 버튼 zone — 고립 모드일 때만 활성
+    // 2) 화면 하단 중앙 "나가기" 버튼 zone — 고립 모드일 때만 활성
     const exitBtn = document.getElementById('exitIsolationBtn');
     if (exitBtn && !exitBtn.hidden && isolationKey) {
-      const inExitZone = (screenX >= 0.03 && screenX <= 0.16 &&
-                          screenY >= 0.03 && screenY <= 0.10);
+      const inExitZone = (screenX >= 0.42 && screenX <= 0.58 &&
+                          screenY >= 0.90 && screenY <= 0.99);
       if (inExitZone) {
         exitIsolation();
         fingerMenu.rPinchPrev = rPinching;
@@ -4866,9 +4867,13 @@ renderer.setAnimationLoop(() => {
       if (mesh.userData.cloudsMesh) mesh.userData.cloudsMesh.rotation.y += dt * 0.08;
       const label = mesh.userData.label;
       if (label) {
-        // 고립 시 행성이 스케일 업 되므로, 실제 시각 반경(radius × scale)을 기준으로 라벨 위에 배치
+        // 라벨을 행성 윗쪽에 명확히 고정. visualR + 60 만큼 위로 + z 살짝 카메라쪽으로 (가림 방지).
         const visualR = p.radius * mesh.scale.y;
-        label.position.set(mesh.position.x, mesh.position.y + visualR + 30, mesh.position.z);
+        label.position.set(
+          mesh.position.x,
+          mesh.position.y + visualR + 60,
+          mesh.position.z + visualR * 0.6   // camera-toward(+Z) 오프셋 → 행성에 안 가려짐
+        );
       }
       continue;
     }
