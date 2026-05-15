@@ -782,19 +782,28 @@
   }
   #starNameSubmit:hover { color: #ffd060; }
   #starNameSkip {
-    position: absolute; bottom: 4.5%;
+    position: absolute; bottom: 3%;
     left: 50%; transform: translateX(-50%);
-    background: transparent;
-    border: none;
-    color: rgba(255,255,255,0.5);
+    background: rgba(15,18,28,0.75);
+    color: rgba(255,255,255,0.92);
+    border: 1px solid rgba(255,255,255,0.28);
+    border-radius: 999px;
+    padding: 10px 24px;
     font-family: 'Orbitron', sans-serif;
-    font-size: 11px;
-    letter-spacing: 0.22em;
+    font-size: 12px;
+    letter-spacing: 0.28em;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
     cursor: pointer;
     pointer-events: auto;
-    transition: color 0.2s ease;
+    transition: background 0.2s ease, border-color 0.2s ease;
   }
-  #starNameSkip:hover { color: rgba(255,255,255,0.9); }
+  #starNameSkip:hover {
+    background: rgba(30,34,46,0.85);
+    border-color: rgba(255,255,255,0.45);
+  }
+  #starNameSkip .arrow { margin-right: 8px; font-weight: 300; }
 
   /* ─── 별자리 활성화 버튼 (좌측, "탐험 가이드" 바로 아래에 항상 표시) ─── */
   /* PNG 오버레이의 "탐험 가이드" 버튼 좌측 정렬 + 위 약 1cm 간격 */
@@ -887,7 +896,7 @@
     <span class="divider"></span>
     <button id="starNameSubmit">검색</button>
   </div>
-  <button id="starNameSkip">건너뛰기 (ESC)</button>
+  <button id="starNameSkip"><span class="arrow">←</span>나가기</button>
 </div>
 
 <!-- ─── 별자리 활성화 버튼 (좌측 "탐험 가이드" 아래에 항상 표시, 핀치로 토글) ─── -->
@@ -4323,6 +4332,18 @@ function processWebcamGestures(dt) {
         return;
       }
     }
+
+    // 3) 별 명명 화면 "나가기" 버튼 zone — 발견 모드일 때만 활성
+    const skipBtn = document.getElementById('starNameSkip');
+    if (skipBtn && discoveryActive) {
+      const inSkipZone = (screenX >= 0.42 && screenX <= 0.58 &&
+                          screenY >= 0.94 && screenY <= 0.99);
+      if (inSkipZone) {
+        skipStarNaming();
+        fingerMenu.rPinchPrev = rPinching;
+        return;
+      }
+    }
   }
 
   // ── 모드별 액션: 오른손이 왼손에서 떨어진 공중에서 핀치할 때 ──
@@ -5221,7 +5242,7 @@ document.addEventListener('mousedown', e => {
 // ─── 별 발견 + 명명 시스템 ────────────────────────────
 // 무명 별 ~400개를 시드 기반으로 절차적 생성. B 비행 중 80 units 이내 진입 시 발견.
 // 발견된 별은 사용자가 이름을 지어 localStorage에 영속 저장 → 다음 방문에도 유지.
-const DISCOVERY_STAR_COUNT  = 300;          // 더욱 듬성듬성
+const DISCOVERY_STAR_COUNT  = 150;          // 더욱 듬성듬성
 const DISCOVERY_SEED        = 0xABBA55;     // 좌표·색·크기 고정 (세션 간 동일)
 const DISCOVERY_RADIUS_NEAR = 400;          // 이 거리 이내 진입 시 발견
 const DISCOVERY_HINT_RADIUS = 4500;         // 이 거리 이내에선 깜빡임 힌트
