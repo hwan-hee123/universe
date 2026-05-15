@@ -578,10 +578,13 @@
     if (done) return;
     done = true;
     window.__abyssPinchFired = null;
+    // 캘리브 화면을 인트로 페이드 시작 직전에 보여줌. calib의 검은 배경이
+    // intro 뒤에 깔려서, intro가 투명해지는 동안 우주씬이 비치지 않음
+    // (calib z-index 9998 < intro 9999, 둘 다 우주씬보다 위)
+    startCalibration();
     intro.classList.add('fading');
     setTimeout(() => {
       intro.remove();
-      startCalibration();          // 인트로 페이드 끝나면 캘리브레이션
     }, 1400);
   }
 
