@@ -3646,8 +3646,8 @@ const fingerMenu = {
 // B 비행 — 가변속 매개변수
 const FLIGHT_DEADZONE   = 0.04;   // 중립 주변 무반응 영역 (정규화 좌표)
 const FLIGHT_MAX_OFFSET = 0.30;   // 최대 속도 도달 거리
-const FLIGHT_MAX_SPEED  = 600;    // units / sec (전후)
-const FLIGHT_STRAFE_SPEED = 300;  // units / sec (좌우)
+const FLIGHT_MAX_SPEED  = 1500;   // units / sec (전후) — 깊은 성간 공간까지 합리적 시간 내 도달
+const FLIGHT_STRAFE_SPEED = 700;  // units / sec (좌우)
 
 // 둘러보기 (orbit drag) — 카메라 spherical 회전 계산용 재사용 객체 (D 모드 + A 더블핀치 공용)
 const _orbitOffset    = new THREE.Vector3();
@@ -5221,16 +5221,16 @@ document.addEventListener('mousedown', e => {
 // ─── 별 발견 + 명명 시스템 ────────────────────────────
 // 무명 별 ~400개를 시드 기반으로 절차적 생성. B 비행 중 80 units 이내 진입 시 발견.
 // 발견된 별은 사용자가 이름을 지어 localStorage에 영속 저장 → 다음 방문에도 유지.
-const DISCOVERY_STAR_COUNT  = 500;
+const DISCOVERY_STAR_COUNT  = 800;
 const DISCOVERY_SEED        = 0xABBA55;     // 좌표·색·크기 고정 (세션 간 동일)
-const DISCOVERY_RADIUS_NEAR = 200;          // 이 거리 이내 진입 시 발견
-const DISCOVERY_HINT_RADIUS = 1500;         // 이 거리 이내에선 깜빡임 힌트
+const DISCOVERY_RADIUS_NEAR = 400;          // 이 거리 이내 진입 시 발견
+const DISCOVERY_HINT_RADIUS = 3500;         // 이 거리 이내에선 깜빡임 힌트
 const DISCOVERY_INTRO_MS    = 2000;         // "별을 발견하였습니다" 표시 시간
 const DISCOVERY_CAMERA_MS   = 1200;         // 명명 화면 카메라 보간 시간
 const DISCOVERY_COOLDOWN_MS = 3000;         // 다음 발견까지 lockout
-// 태양계 바깥 (해왕성 orbit = 1130) ~ 깊은 성간 공간
-const DISCOVERY_POOL_R_MIN  = 1500;
-const DISCOVERY_POOL_R_MAX  = 6000;
+// 깊은 성간 공간 — 태양계(해왕성 orbit 1130) 훨씬 바깥
+const DISCOVERY_POOL_R_MIN  = 3000;
+const DISCOVERY_POOL_R_MAX  = 18000;
 
 const discoverableStars = [];
 let discoveryActive   = false;        // true 면 B 비행 입력 차단
@@ -5305,7 +5305,7 @@ function initDiscoverableStars() {
     const z = r * Math.cos(phi);
 
     const tempT    = rng();                       // 0=blue, 1=red
-    const baseSize = 25 + rng() * 55;             // sprite scale 25~80 (먼 거리에서도 보이게)
+    const baseSize = 80 + rng() * 200;            // sprite scale 80~280 (먼 거리에서도 보이게)
     const color    = _starColorFromTemp(tempT);
 
     const mat = new THREE.SpriteMaterial({
