@@ -2623,6 +2623,7 @@ let wireHead = null;  // 별자리 와이어프레임 머리 (Face 회전 적용
 const _headTargetQuat = new THREE.Quaternion();
 const _headTmpQuat    = new THREE.Quaternion();
 const _headMat4       = new THREE.Matrix4();
+const _headEuler      = new THREE.Euler(0, 0, 0, 'YXZ');
 
 function setupWireframeView() {
   if (wireScene) return; // 이미 셋업됨
@@ -2842,9 +2843,15 @@ function updateWireframeHead(faceLandmarks, matrixData){
 
   wireHead.visible = true;
 
-  // 머리 회전 — 매트릭스에서 회전 추출 + Y축 보정
+  // 머리 회전 — 매트릭스에서 Euler 분해 → pitch/roll 부호 반전 → 다시 quaternion으로
+  // (MediaPipe 좌표계 vs Three.js 좌표계 차이로 끄덕(pitch)·기울기(roll)이 반대로
+  //  적용되던 것을 보정. yaw는 그대로.)
   _headMat4.fromArray(matrixData);
-  _headTargetQuat.setFromRotationMatrix(_headMat4);
+  _headEuler.setFromRotationMatrix(_headMat4, 'YXZ');
+  _headEuler.x = -_headEuler.x;   // pitch 반전 (위로 들면 위로)
+  _headEuler.z = -_headEuler.z;   // roll 반전 (오른쪽 기울이면 오른쪽)
+  _headTargetQuat.setFromEuler(_headEuler);
+  // 얼굴이 카메라를 향하도록 Y축 180도 보정
   const flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
   _headTargetQuat.multiply(flip);
   wireHead.quaternion.slerp(_headTargetQuat, 0.35);
