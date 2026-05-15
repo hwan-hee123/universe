@@ -1416,6 +1416,8 @@ let followMoonMesh = null;
 let followAim = null;
 // 은하 비행 대상 Group
 let followGalaxyGroup = null;
+// 명명한 별 비행 대상 (discoverableStars 항목)
+let followStarItem = null;
 
 // 사용자가 직접 조작하면 모든 추적 해제
 controls.addEventListener('start', () => {
@@ -4502,6 +4504,7 @@ function setFollow(key) {
   followMoonMesh = null;
   followAim = null;
   followGalaxyGroup = null;
+  followStarItem = null;
   if (key === 'home' || key === 'sun') return;
   const mesh = planetMeshes[key];
   if (!mesh) return;
@@ -4521,6 +4524,7 @@ function setFollowMoon(moonMesh) {
   followLocalOffset = null;
   followAim = null;
   followGalaxyGroup = null;
+  followStarItem = null;
 }
 
 // 별자리 등 먼 곳의 한 점을 '바라봄'. 카메라 위치는 안 움직이고 방향만 회전.
@@ -4530,6 +4534,7 @@ function setFollowAim(pos) {
   followLocalOffset = null;
   followMoonMesh = null;
   followGalaxyGroup = null;
+  followStarItem = null;
 }
 
 // 외부 은하로 비행. group 자체를 추적 (위치 고정이지만 일관성을 위해 group 참조).
@@ -4539,6 +4544,17 @@ function setFollowGalaxy(group) {
   followLocalOffset = null;
   followMoonMesh = null;
   followAim = null;
+  followStarItem = null;
+}
+
+// 내가 명명한 별로 실제 비행 (검색에서 호출). 별 좌표 + 가까운 거리에 카메라 배치.
+function setFollowStar(star) {
+  followKey = 'star';
+  followStarItem = star;
+  followLocalOffset = null;
+  followMoonMesh = null;
+  followAim = null;
+  followGalaxyGroup = null;
 }
 
 function computeFollowPose(key, outTarget, outLook) {
@@ -4582,6 +4598,17 @@ function computeFollowPose(key, outTarget, outLook) {
     outTarget.copy(followGalaxyGroup.position).addScaledVector(_fromSun, dist);
     outTarget.y += r * 0.25; // 살짝 위에서
     outLook.copy(followGalaxyGroup.position);
+    return true;
+  }
+  if (key === 'star') {
+    if (!followStarItem) return false;
+    // 원점 → 별 방향 바깥쪽으로 카메라 배치. 별 크기에 비례한 적당한 거리.
+    const s = followStarItem;
+    _fromSun.copy(s.basePos).normalize();
+    const dist = s.baseSize * 5 + 200;
+    outTarget.copy(s.basePos).addScaledVector(_fromSun, dist);
+    outTarget.y += s.baseSize * 0.6;
+    outLook.copy(s.basePos);
     return true;
   }
   const mesh = planetMeshes[key];
@@ -5128,7 +5155,7 @@ function doSearch(query) {
         type: 'namedStar',
         label: `⭐ ${s.userName}`,
         sub: '내가 발견한 별',
-        position: s.basePos,
+        star: s,
       });
     }
   }
@@ -5197,8 +5224,8 @@ function navigateToResult(r) {
       setStatus(`🚀 → ${r.label} 비행 중…`);
       break;
     case 'namedStar':
-      setFollowAim(r.position);
-      setStatus(`🔍 → ${r.label}`);
+      setFollowStar(r.star);
+      setStatus(`🚀 → ${r.label} 비행 중…`);
       break;
   }
 }
