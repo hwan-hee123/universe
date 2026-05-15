@@ -193,74 +193,44 @@
   #introScreen .spark,
   #introScreen .ring { display: none; }
 
-  /* ─── 인트로 씬 (AI 생성 레이어 4장 = 4:3 비율) ─── */
+  /* ─── 인트로 씬: 원본 이미지 한 장 그대로 표시 (자르지 않음) ─── */
   #introScreen .scene {
-    position: absolute;
-    left: 50%; top: 50%;
-    transform: translate(-50%, -50%);
-    /* 1168 / 880 ≈ 4:3 — AI가 생성한 레이어 비율 */
-    width: min(100vw, calc(100vh * 1.327));
-    aspect-ratio: 1168 / 880;
+    position: absolute; inset: 0;
     pointer-events: none;
   }
-  /* 4장의 PNG 레이어를 같은 무대에 겹쳐서 각각 애니메이션.
-     모두 같은 원본 사진에서 AI로 부분 추출했기 때문에 inset:0 만으로
-     자동 정렬됨. mix-blend-mode: lighten 으로 검은 배경 픽셀이 자연스럽게
-     아래 레이어와 합성되어 사각 경계가 보이지 않음. */
-  #introScreen .sprite {
+  #introScreen .full-image {
     position: absolute; inset: 0;
-    background-size: 100% 100%;
+    background-image: url('assets/abyss_intro.jpg');
+    background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
-    will-change: transform, opacity;
-  }
-  /* 1) 배경 + 타이틀 — 정적, 항상 표시. 가장 아래라 blend 불필요 */
-  #introScreen .sprite.bg-title {
-    background-image: url('assets/intro_bg.png');
-  }
-  /* 손/원 레이어는 검은 배경이 위로 깔려도 bg가 비치도록 lighten blend */
-  #introScreen .sprite.left-hand,
-  #introScreen .sprite.right-hand,
-  #introScreen .sprite.rings {
-    mix-blend-mode: lighten;
-  }
-  /* 2) 왼쪽 와이어프레임 손 — 화면 밖에서 안쪽으로 슬라이드 */
-  #introScreen .sprite.left-hand {
-    background-image: url('assets/intro_hand_left.png');
     opacity: 0;
-    transform: translateX(-110%);
-    animation: leftHandIn 2.4s 0.6s cubic-bezier(.22,.61,.36,1) forwards;
+    animation: introFadeIn 1.4s 0.3s ease-out forwards;
   }
-  /* 3) 오른쪽 실루엣 손 — 반대편에서 슬라이드 */
-  #introScreen .sprite.right-hand {
-    background-image: url('assets/intro_hand_right.png');
+  @keyframes introFadeIn {
+    from { opacity: 0; transform: scale(1.02); }
+    to   { opacity: 1; transform: scale(1.0); }
+  }
+  /* 핀치 안내 — 화면 하단 중앙, 살짝 깜빡임 */
+  #introScreen .pinch-hint {
+    position: absolute; bottom: 4%; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px; letter-spacing: 0.45em;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    text-align: center;
+    text-shadow: 0 0 12px rgba(180,210,255,0.4);
     opacity: 0;
-    transform: translateX(110%);
-    animation: rightHandIn 2.4s 0.6s cubic-bezier(.22,.61,.36,1) forwards;
+    animation: introHintIn 1.0s 1.6s ease-out forwards, pinchHintPulse 2.2s 2.6s ease-in-out infinite;
   }
-  /* 4) 가운데 동심원 — 손끝이 만난 직후 페이드인 + 살짝 확대 */
-  #introScreen .sprite.rings {
-    background-image: url('assets/intro_rings.png');
-    opacity: 0;
-    transform: scale(0.85);
-    transform-origin: 50% 50%;
-    animation: ringsIn 1.1s 2.8s cubic-bezier(.22,.61,.36,1) forwards;
+  @keyframes introHintIn  { to { opacity: 1; } }
+  @keyframes pinchHintPulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 0.95; }
   }
-  @keyframes leftHandIn {
-    0%   { opacity: 0; transform: translateX(-110%); }
-    20%  { opacity: 1; }
-    100% { opacity: 1; transform: translateX(0); }
-  }
-  @keyframes rightHandIn {
-    0%   { opacity: 0; transform: translateX(110%); }
-    20%  { opacity: 1; }
-    100% { opacity: 1; transform: translateX(0); }
-  }
-  @keyframes ringsIn {
-    0%   { opacity: 0; transform: scale(0.85); }
-    60%  { opacity: 1; transform: scale(1.08); }
-    100% { opacity: 1; transform: scale(1.0); }
-  }
+  /* 옛 sprite 클래스들 — 호환을 위해 숨김 */
+  #introScreen .sprite { display: none; }
 
   /* 화이트 플래시 — 인트로 종료 직전 */
   #introScreen .flash {
@@ -389,17 +359,11 @@
 <div id="introScreen" aria-label="ABYSS intro">
   <div class="stars"></div>
   <div class="scene">
-    <!-- 1. 배경 + 타이틀 (체브론 + ABYSS) — 정적, 항상 보임 -->
-    <div class="sprite bg-title"></div>
-    <!-- 2. 왼쪽 와이어프레임 손 — 왼쪽 밖에서 슬라이드 인 -->
-    <div class="sprite left-hand"  id="introHandLeft"></div>
-    <!-- 3. 오른쪽 실루엣 손 — 오른쪽 밖에서 슬라이드 인 -->
-    <div class="sprite right-hand" id="introHandRight"></div>
-    <!-- 4. 가운데 동심원 — 두 검지가 만난 직후 페이드 인 -->
-    <div class="sprite rings"      id="introRings"></div>
+    <!-- 원본 이미지를 자르지 않고 한 장 그대로 표시 -->
+    <div class="full-image"></div>
   </div>
   <div class="flash" id="introFlash"></div>
-  <div class="skip">click anywhere to enter</div>
+  <div class="pinch-hint">✋ pinch thumb &amp; index to enter</div>
 </div>
 
 <!-- ─── 캘리브레이션 / 시스템 체크 화면 ──────────── -->
@@ -499,30 +463,44 @@
   const intro = document.getElementById('introScreen');
   if (!intro) return;
   const flash  = document.getElementById('introFlash');
+  const hint   = intro.querySelector('.pinch-hint');
 
   let done = false;
-  // 손 슬라이드는 CSS 애니메이션이 처리 (0.6s 지연 + 2.4s = 3.0s에 검지 만남)
-  // 동심원도 CSS가 2.8s에 페이드인 시작.
-  // JS는 마지막 플래시와 페이드아웃 타이밍만 담당.
-  const TIMING = {
-    flashAt: 3800,  // 검지가 만난 직후 흰 플래시
-    endAt:   4900,  // 페이드아웃 시작
+
+  // 1.6초 후 카메라 자동 시작 — 인트로 페이드인이 끝나는 시점쯤에 권한 요청
+  setTimeout(() => {
+    if (done) return;
+    const handBtn = document.getElementById('handBtn');
+    if (handBtn && !window.__mpRunning) {
+      if (hint) hint.textContent = '✋ requesting camera...';
+      try { handBtn.click(); } catch(e) {}
+      setTimeout(() => { if (!done && hint) hint.textContent = '✋ pinch thumb & index to enter'; }, 2000);
+    }
+  }, 1600);
+
+  // 메인 스크립트가 핀치 감지하면 호출 (1회성)
+  window.__abyssPinchFired = () => {
+    if (done) return;
+    if (hint) hint.textContent = '✨ ENTERING';
+    flash.classList.add('on');
+    setTimeout(endIntro, 700);
   };
 
-  setTimeout(() => { if (done) return; flash.classList.add('on'); }, TIMING.flashAt);
-  setTimeout(() => { if (done) return; endIntro(); }, TIMING.endAt);
+  // 60초 안전망 — 카메라 거부나 인식 실패시 자동 진행
+  setTimeout(() => { if (!done) endIntro(); }, 60000);
 
   function endIntro(){
     if (done) return;
     done = true;
+    window.__abyssPinchFired = null;
     intro.classList.add('fading');
     setTimeout(() => {
       intro.remove();
-      startCalibration();          // ← 인트로 페이드 끝나면 캘리브레이션 시작
+      startCalibration();          // 인트로 페이드 끝나면 캘리브레이션
     }, 1400);
   }
 
-  // 클릭/키보드로 스킵 (시연 중 유용)
+  // 클릭/키보드로 스킵 (시연 중 안전망)
   intro.addEventListener('click', endIntro);
   window.addEventListener('keydown', (e) => {
     if (!done && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) endIntro();
@@ -2397,6 +2375,7 @@ async function startWebcamHands() {
 
 function stopWebcamHands() {
   mp.active = false;
+  window.__mpRunning = false;
   if (mp.stream) {
     mp.stream.getTracks().forEach(t => t.stop());
     mp.stream = null;
@@ -2892,6 +2871,22 @@ function rightPinchPos(rightLm) {
   };
 }
 
+// ── 단일 손 핀치 제스처 (intro → calibration 진입) ──
+// 엄지(4)와 검지(8) 사이 거리가 임계값 아래로 떨어지면 fire. 1회성 콜백.
+function checkPinchGesture(leftLm, rightLm) {
+  if (!window.__abyssPinchFired) return;
+  for (const lm of [leftLm, rightLm]) {
+    if (!lm) continue;
+    const d = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+    if (d < 0.05) {     // 정규화 좌표(0~1)에서 약 5% — 손가락 끝이 거의 닿는 거리
+      const cb = window.__abyssPinchFired;
+      window.__abyssPinchFired = null; // one-shot
+      cb();
+      return;
+    }
+  }
+}
+
 // ── 양손 주먹→폄 제스처 (calibration → universe 진입) ──
 // 각 손의 손바닥 상태를 'fist' | 'open' | 'neutral'로 분류.
 // 두 손이 동시에 fist 상태가 N프레임 지속되면 'armed', 그 뒤 'open' 상태가
@@ -3008,7 +3003,9 @@ function processWebcamGestures(dt) {
   // 와이어프레임 손 시각화 (양손 모두 항상 그림)
   updateWireframeView(leftLm, rightLm, fingerMenu.mode);
 
-  // 양손 주먹 → 폄 제스처 (캘리브레이션 진입 트리거)
+  // 인트로 단일 핀치 제스처 (intro → calibration 진입 트리거)
+  checkPinchGesture(leftLm, rightLm);
+  // 양손 주먹 → 폄 제스처 (calibration → universe 진입 트리거)
   checkFistOpenGesture(leftLm, rightLm);
 
   if (!rightLm) {
