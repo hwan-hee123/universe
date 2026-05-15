@@ -28,12 +28,18 @@
   /* 음성 인식 / 손 인식 토글 / 상태 텍스트 모두 시연용으로 숨김.
      handBtn은 캘리브가 click()으로 프로그램적으로 호출하니 DOM에는 유지. */
   #micBtn, #handBtn, #status { display: none !important; }
+  /* constBtn(별자리 토글)도 화면에서 숨김 — 우상단 PNG 격자 아이콘 핀치 제스처로
+     팝업 호출 → 팝업 핀치로 토글하는 방식으로 대체됨. DOM은 유지 (gesture가 click 호출). */
+  #constBtn { display: none !important; }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,48,37,.7);} 50% { box-shadow: 0 0 0 12px rgba(217,48,37,0);} }
   #status {
     background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 6px;
     font-size: 12px; max-width: 320px; text-align: right; min-height: 18px;
   }
   #settingsBtn {
+    /* 좌하단으로 이동. 검색창 위에 위치 */
+    position: fixed; bottom: 60px; left: 12px;
+    z-index: 15;
     background: rgba(0,0,0,0.6); color: #fff; border: 1px solid #555;
     padding: 6px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
   }
@@ -72,9 +78,13 @@
     font-size: 12px;
   }
   #searchBox {
-    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    /* 좌하단으로 이동 — 검색 결과는 입력창 위로 펼쳐짐 */
+    position: fixed; bottom: 12px; left: 12px;
     z-index: 15; width: 340px;
+    display: flex; flex-direction: column-reverse;
   }
+  /* 검색 결과를 입력창 위에 띄움 */
+  #searchBox #searchResults { margin-top: 0; margin-bottom: 6px; }
   #searchInput {
     width: 100%; background: rgba(0,0,0,0.75); color: #fff;
     border: 1px solid #555; border-radius: 999px;
@@ -555,6 +565,41 @@
     text-transform: uppercase;
     animation: skipBlink 2.4s ease-in-out infinite;
   }
+
+  /* ─── 우상단 격자 아이콘 핀치 → 별자리 활성화 팝업 ─── */
+  #constPopup {
+    position: fixed; top: 14%; right: 2%;
+    z-index: 15;
+    background: rgba(15,18,28,0.85);
+    color: #fff;
+    border: 1px solid rgba(180,210,255,0.4);
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5), 0 0 18px rgba(180,210,255,0.15);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 0.25s ease-out;
+  }
+  #constPopup[hidden] { display: none; }
+  #constPopup.active {
+    background: rgba(91,141,245,0.85);
+    border-color: rgba(180,210,255,0.7);
+  }
+  #constPopup .dot {
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ffd97a;
+    margin-right: 8px;
+    vertical-align: middle;
+    box-shadow: 0 0 8px rgba(255,217,122,0.7);
+  }
+  #constPopup.active .dot { background: #6cffa9; box-shadow: 0 0 8px rgba(108,255,169,0.8); }
 </style>
 </head>
 <body>
@@ -564,6 +609,11 @@
 
 <!-- ─── 우주씬 UI 오버레이 (Three.js 캔버스 위에 PNG로 덮음) ─── -->
 <img id="solarSystemOverlay" src="assets/solar_system.png" alt="">
+
+<!-- ─── 별자리 활성화 팝업 (우상단 격자 아이콘 핀치하면 등장) ─── -->
+<div id="constPopup" hidden>
+  <span class="dot"></span>별자리
+</div>
 
 <!-- ─── ABYSS 인트로 화면 ─────────────────────────── -->
 <!-- 같은 원본 이미지를 부위별로 클립해서 여러 레이어로 깔고, -->
@@ -3534,6 +3584,37 @@ function processWebcamGestures(dt) {
     fingerMenu.mode = onFinger;
     setStatus(`🤚 모드 변경: ${modeLabel(onFinger)}`);
     fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
+  }
+
+  // ── 우상단 격자 아이콘 핀치 → 별자리 팝업 토글, 팝업 핀치 → 별자리 활성화 ──
+  // PNG 디자인에 맞춘 화면 영역(정규화 0~1 screen coords, mirror 후 기준).
+  if (rPinching && !fingerMenu.rPinchPrev) {
+    const screenX = 1 - rPos.x;    // 디스플레이는 mirror돼 있음
+    const screenY = rPos.y;
+    // 격자 아이콘 hot zone (우상단, 화면 폭의 우측 8%, 상단 13%)
+    const inIconZone = (screenX >= 0.91 && screenX <= 1.00 &&
+                        screenY >= 0.01 && screenY <= 0.13);
+    // 팝업 zone (격자 바로 아래)
+    const popupEl = document.getElementById('constPopup');
+    const popupVisible = popupEl && !popupEl.hidden;
+    const inPopupZone = (screenX >= 0.83 && screenX <= 1.00 &&
+                         screenY >= 0.13 && screenY <= 0.23);
+
+    if (inIconZone) {
+      // 격자 핀치 → 팝업 토글
+      if (popupEl) popupEl.hidden = !popupEl.hidden;
+      fingerMenu.rPinchPrev = rPinching;
+      return;
+    } else if (popupVisible && inPopupZone) {
+      // 팝업 핀치 → 별자리 토글 (constBtn click 호출)
+      const cb = document.getElementById('constBtn');
+      if (cb) cb.click();
+      // 팝업 외형도 active 상태 반영
+      const active = cb && cb.classList.contains('active');
+      popupEl.classList.toggle('active', active);
+      fingerMenu.rPinchPrev = rPinching;
+      return;
+    }
   }
 
   // ── 모드별 액션: 오른손이 왼손에서 떨어진 공중에서 핀치할 때 ──
