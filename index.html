@@ -278,6 +278,8 @@
   }
   /* 옛 sprite 클래스들 — 호환을 위해 숨김 */
   #introScreen .sprite { display: none; }
+  /* 옛 flash 효과 강제 무력화 — 캐시에 잔존해도 동작 안 함 */
+  #introScreen .flash, #galaxyScreen .flash { display: none !important; }
 
   /* ─── 은하 회전 영상 화면 ─── */
   #galaxyScreen {
