@@ -2982,13 +2982,31 @@ const fingerMenu = {
   mode: null,            // 'A' | 'D' | 'B' | null  (현재 오른손이 어떤 모드인가)
   rPinchPrev: false,     // 직전 프레임 오른손 핀치 여부 (edge detection)
   lastFireA: 0,          // A 마지막 발동 시각
-  prevRightX: null,      // D 둘러보기 가로 델타 계산
-  prevRightY: null,      // D 둘러보기 세로 델타 계산
+  prevRightX: null,      // 가로 델타 계산 (D 둘러보기 + A 더블핀치 둘러보기 공용)
+  prevRightY: null,      // 세로 델타 계산
+  lastSelectedKey: null, // A 모드에서 마지막에 선택한 천체 키 (더블 핀치 감지용)
+  orbitLockMesh: null,   // A 더블 핀치로 둘러보기 잠긴 대상 mesh (회전 중심)
 };
 
-// D 둘러보기 — 카메라 orbit 계산용 재사용 객체
+// 둘러보기 (orbit drag) — 카메라 spherical 회전 계산용 재사용 객체 (D 모드 + A 더블핀치 공용)
 const _orbitOffset    = new THREE.Vector3();
 const _orbitSpherical = new THREE.Spherical();
+function applyOrbitDrag(targetPos, dx, dy, sensitivity){
+  const SENS = sensitivity ?? 6;
+  // Follow 모드 해제 (orbit과 follow가 충돌)
+  followKey = null; followLocalOffset = null;
+  followMoonMesh = null; followAim = null; followGalaxyGroup = null;
+  // 카메라 위치를 target 기준 spherical로 변환
+  _orbitOffset.subVectors(camera.position, targetPos);
+  _orbitSpherical.setFromVector3(_orbitOffset);
+  _orbitSpherical.theta += dx * SENS;
+  _orbitSpherical.phi   += dy * SENS;
+  _orbitSpherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, _orbitSpherical.phi));
+  _orbitOffset.setFromSpherical(_orbitSpherical);
+  camera.position.copy(targetPos).add(_orbitOffset);
+  camera.lookAt(targetPos);
+  controls.target.copy(targetPos);
+}
 
 // 캔버스 오버레이 (웹캠 미리보기 위에 손가락 라벨 그림)
 const mpOverlay = document.getElementById('mpOverlay');
@@ -3613,7 +3631,7 @@ function processWebcamGestures(dt) {
   // ── 모드별 액션: 오른손이 왼손에서 떨어진 공중에서 핀치할 때 ──
   const freePinch = rPinching && !onFinger;
   if (freePinch && fingerMenu.mode === 'A') {
-    // A 선택 — edge trigger + 쿨다운
+    // A 선택 — edge trigger + 쿨다운. 같은 천체 두 번째 핀치 → orbit lock 모드 진입.
     if (justPinched && now - fingerMenu.lastFireA > ACTION_COOLDOWN_A) {
       const ndcX = (1 - rPos.x) * 2 - 1;
       const ndcY = -(rPos.y * 2 - 1);
@@ -3621,39 +3639,52 @@ function processWebcamGestures(dt) {
       _raycaster.setFromCamera(_mpNDC, camera);
       const hits = _raycaster.intersectObjects(selectableObjects, false);
       if (hits.length > 0) {
-        handleSelection(hits[0].object);
+        const obj  = hits[0].object;
+        const kind = obj.userData.selKind;
+        // 천체 식별 키 (selKey가 있으면 사용, 없으면 객체 reference)
+        const key  = obj.userData.selKey || obj.uuid;
+
+        if (key === fingerMenu.lastSelectedKey) {
+          // 같은 천체 두 번째 핀치 → 둘러보기 잠금
+          let centerMesh = obj;
+          if (kind === 'planet' && obj.userData.selKey && planetMeshes[obj.userData.selKey]) {
+            centerMesh = planetMeshes[obj.userData.selKey];
+          } else if (kind === 'sun') {
+            centerMesh = sun;
+          }
+          fingerMenu.orbitLockMesh = centerMesh;
+          setStatus(`🔄 ${obj.userData.name || '대상'} 둘러보기 — 핀치 드래그로 회전`);
+          fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
+        } else {
+          // 새 천체 → 기존처럼 비행
+          handleSelection(obj);
+          fingerMenu.lastSelectedKey = key;
+          fingerMenu.orbitLockMesh = null;
+        }
         fingerMenu.lastFireA = now;
       } else {
         setStatus('👍 가리킨 곳에 천체 없음');
       }
     }
-    mp.tag.textContent = `A 선택 모드 — 핀치 ✓`;
+
+    // orbit lock이 활성화된 상태에서 핀치 드래그 → 그 천체 중심으로 카메라 회전
+    if (fingerMenu.orbitLockMesh && fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
+      const dx = rPos.x - fingerMenu.prevRightX;
+      const dy = rPos.y - fingerMenu.prevRightY;
+      applyOrbitDrag(fingerMenu.orbitLockMesh.position, dx, dy);
+    }
+    fingerMenu.prevRightX = rPos.x;
+    fingerMenu.prevRightY = rPos.y;
+
+    mp.tag.textContent = fingerMenu.orbitLockMesh
+      ? `🔄 둘러보기 — 같은 행성 핀치 드래그로 회전`
+      : `A 선택 모드 — 핀치 ✓`;
   } else if (freePinch && fingerMenu.mode === 'D') {
     // D 둘러보기 — 핀치 드래그로 controls.target 중심 카메라 orbit
-    // (마우스 좌클릭 드래그와 같은 동작: 손 ↔ ↕ 움직임 → 시야 회전)
     if (fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
       const dx = rPos.x - fingerMenu.prevRightX;
       const dy = rPos.y - fingerMenu.prevRightY;
-
-      // Follow 모드 해제 (orbit과 follow가 충돌하므로)
-      followKey = null; followLocalOffset = null;
-      followMoonMesh = null; followAim = null; followGalaxyGroup = null;
-
-      // 카메라 위치를 target 기준 구면좌표로 변환
-      _orbitOffset.subVectors(camera.position, controls.target);
-      _orbitSpherical.setFromVector3(_orbitOffset);
-
-      // 손 움직임 → 회전. 감도 6 (정규화 좌표 0~1 기준)
-      const ROT_SENS = 6;
-      _orbitSpherical.theta += dx * ROT_SENS;
-      _orbitSpherical.phi   += dy * ROT_SENS;
-      // phi 클램프 — 위/아래 끝에서 카메라 뒤집힘 방지
-      _orbitSpherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, _orbitSpherical.phi));
-
-      // 새 카메라 위치 = target + 회전된 offset
-      _orbitOffset.setFromSpherical(_orbitSpherical);
-      camera.position.copy(controls.target).add(_orbitOffset);
-      camera.lookAt(controls.target);
+      applyOrbitDrag(controls.target, dx, dy);
     }
     fingerMenu.prevRightX = rPos.x;
     fingerMenu.prevRightY = rPos.y;
