@@ -455,9 +455,9 @@
 <div id="introScreen" aria-label="ABYSS intro">
   <div class="stars"></div>
   <div class="scene">
-    <!-- 영상 자동재생 루프. 파일이 없거나 로딩 중엔 poster의 이미지가 보임. -->
+    <!-- 영상 한 번 자동재생 후 마지막 프레임에서 정지. 파일 없거나 로딩 중엔 poster 이미지. -->
     <video class="full-video" id="introVideo"
-           autoplay loop muted playsinline preload="auto"
+           autoplay muted playsinline preload="auto"
            poster="assets/abyss_intro.jpg">
       <source src="assets/abyss_intro.mp4" type="video/mp4">
       <source src="assets/abyss_intro.webm" type="video/webm">
@@ -576,9 +576,23 @@
   const loadBar  = document.getElementById('introLoadingBar');
   const loadFill = document.getElementById('introLoadingFill');
   const loadText = document.getElementById('introLoadingText');
+  const video    = document.getElementById('introVideo');
 
   let done = false;
   let texturesReady = false;
+
+  // 영상이 끝나면 마지막 프레임에서 정지 (일부 브라우저에서 자동 리셋 방지)
+  if (video) {
+    video.addEventListener('ended', () => {
+      try {
+        // duration 직전으로 currentTime 고정 → poster나 검은 화면으로 돌아가지 않음
+        if (Number.isFinite(video.duration)) {
+          video.currentTime = Math.max(0, video.duration - 0.02);
+        }
+        video.pause();
+      } catch (e) {}
+    });
+  }
 
   // ── 텍스처 로딩 콜백 (메인 스크립트의 LoadingManager가 호출) ──
   window.__abyssLoadProgress = (loaded, total) => {
