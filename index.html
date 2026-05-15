@@ -681,6 +681,121 @@
   #exitIsolationBtn.visible { opacity: 1; }
   #exitIsolationBtn .arrow { margin-right: 8px; font-weight: 300; }
 
+  /* ─── 별 발견 인트로 ("별을 발견하였습니다.") ─── */
+  #discoveryIntro {
+    position: fixed; inset: 0;
+    z-index: 50;
+    background: radial-gradient(circle at center, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.65) 80%);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    opacity: 0;
+    transition: opacity 0.7s ease;
+    pointer-events: none;
+  }
+  #discoveryIntro[hidden] { display: none; }
+  #discoveryIntro.visible { opacity: 1; }
+  #discoveryIntro .title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(28px, 3.5vw, 56px);
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.12em;
+    text-shadow: 0 0 28px rgba(255,255,255,0.55), 0 0 8px rgba(0,0,0,0.85);
+  }
+  #discoveryIntro .sub {
+    margin-top: 14px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    color: rgba(255,255,255,0.6);
+    letter-spacing: 0.3em;
+  }
+
+  /* ─── 별 명명 UI ("별의 이름을 지어주세요") ─── */
+  #starNamingUI {
+    position: fixed; inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  #starNamingUI[hidden] { display: none; }
+  #starNamingUI.visible { opacity: 1; }
+  #starNamingUI .title-wrap {
+    position: absolute; bottom: 28%;
+    left: 50%; transform: translateX(-50%);
+    text-align: center;
+  }
+  #starNamingUI .title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(24px, 2.8vw, 40px);
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.1em;
+    text-shadow: 0 0 24px rgba(0,0,0,0.85), 0 0 6px rgba(0,0,0,0.85);
+  }
+  #starNamingUI .sub {
+    margin-top: 12px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.3em;
+  }
+  #starNamingUI .input-wrap {
+    position: absolute; bottom: 10%;
+    left: 50%; transform: translateX(-50%);
+    width: min(60vw, 720px);
+    display: flex; align-items: center;
+    background: rgba(20, 22, 30, 0.65);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 999px;
+    padding: 14px 28px;
+    pointer-events: auto;
+    box-shadow: 0 10px 36px rgba(0,0,0,0.55);
+  }
+  #starNameInput {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 15px;
+    letter-spacing: 0.04em;
+    outline: none;
+  }
+  #starNameInput::placeholder { color: rgba(255,255,255,0.42); }
+  #starNamingUI .divider {
+    width: 1px; height: 22px;
+    background: rgba(255,255,255,0.28);
+    margin: 0 18px;
+  }
+  #starNameSubmit {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.18em;
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
+  #starNameSubmit:hover { color: #ffd060; }
+  #starNameSkip {
+    position: absolute; bottom: 4.5%;
+    left: 50%; transform: translateX(-50%);
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: color 0.2s ease;
+  }
+  #starNameSkip:hover { color: rgba(255,255,255,0.9); }
+
   /* ─── 별자리 활성화 버튼 (좌측, "탐험 가이드" 바로 아래에 항상 표시) ─── */
   /* PNG 오버레이의 "탐험 가이드" 버튼 좌측 정렬 + 위 약 1cm 간격 */
   #constPopup {
@@ -754,6 +869,26 @@
 
 <!-- ─── 고립 모드 나가기 버튼 (행성 아래 중앙, 고립 모드에서만 표시) ─── -->
 <div id="exitIsolationBtn" hidden><span class="arrow">←</span>나가기</div>
+
+<!-- ─── 별 발견 인트로 ─── -->
+<div id="discoveryIntro" hidden>
+  <div class="title">별을 발견하였습니다.</div>
+  <div class="sub">우주의 아름다움을 탐험하세요</div>
+</div>
+
+<!-- ─── 별 명명 UI ─── -->
+<div id="starNamingUI" hidden>
+  <div class="title-wrap">
+    <div class="title">별의 이름을 지어주세요</div>
+    <div class="sub">우주의 아름다움을 탐험하세요</div>
+  </div>
+  <div class="input-wrap">
+    <input id="starNameInput" type="text" placeholder="별 이름, 상좌 또는 카탈로그 번호를 입력하세요..." autocomplete="off" />
+    <span class="divider"></span>
+    <button id="starNameSubmit">검색</button>
+  </div>
+  <button id="starNameSkip">건너뛰기 (ESC)</button>
+</div>
 
 <!-- ─── 별자리 활성화 버튼 (좌측 "탐험 가이드" 아래에 항상 표시, 핀치로 토글) ─── -->
 <div id="constPopup">
@@ -4195,7 +4330,9 @@ function processWebcamGestures(dt) {
   if (freePinch && fingerMenu.mode === 'A') {
     // A 선택 — edge trigger + 쿨다운. 같은 행성 두 번째 핀치 → 고립 모드 진입.
     // 고립 모드에서는 모든 행성 핀치 액션 차단 — "나가기" 버튼만 빠져나갈 수 있음.
-    if (isolationKey) {
+    if (discoveryActive) {
+      mp.tag.textContent = `🔬 별 발견 — 이름을 지어주세요`;
+    } else if (isolationKey) {
       mp.tag.textContent = `🔬 고립 모드 — "나가기" 버튼 핀치로만 종료 가능`;
     } else if (justPinched && now - fingerMenu.lastFireA > ACTION_COOLDOWN_A) {
       const ndcX = (1 - rPos.x) * 2 - 1;
@@ -4226,16 +4363,26 @@ function processWebcamGestures(dt) {
     if (!isolationKey) mp.tag.textContent = `A 선택 모드 — 핀치 ✓`;
   } else if (freePinch && fingerMenu.mode === 'D') {
     // D 둘러보기 — 핀치 드래그로 controls.target 중심 카메라 orbit
-    if (fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
-      const dx = rPos.x - fingerMenu.prevRightX;
-      // 수직 축 반전 — 손을 위로 올리면 시야도 위로 (자연스러운 매핑)
-      const dy = -(rPos.y - fingerMenu.prevRightY);
-      applyOrbitDrag(controls.target, dx, dy);
+    if (discoveryActive) {
+      mp.tag.textContent = `🔬 별 발견 — 이름을 지어주세요`;
+    } else {
+      if (fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
+        const dx = rPos.x - fingerMenu.prevRightX;
+        // 수직 축 반전 — 손을 위로 올리면 시야도 위로 (자연스러운 매핑)
+        const dy = -(rPos.y - fingerMenu.prevRightY);
+        applyOrbitDrag(controls.target, dx, dy);
+      }
+      fingerMenu.prevRightX = rPos.x;
+      fingerMenu.prevRightY = rPos.y;
+      mp.tag.textContent = `D 둘러보기 — 핀치 드래그 ↔ ↕`;
     }
-    fingerMenu.prevRightX = rPos.x;
-    fingerMenu.prevRightY = rPos.y;
-    mp.tag.textContent = `D 둘러보기 — 핀치 드래그 ↔ ↕`;
   } else if (freePinch && fingerMenu.mode === 'B') {
+    // 발견 진행 중에는 비행 잠금
+    if (discoveryActive) {
+      mp.tag.textContent = `🔬 별 발견 — 이름을 지어주세요`;
+      fingerMenu.rPinchPrev = rPinching;
+      return;
+    }
     // B 비행 — 가변속. 핀치 시작 위치를 "중립" 으로 잡고,
     // 손을 위로 올리면 전진, 아래로 내리면 후진, 좌우 기울이면 스트레이프.
     if (fingerMenu.flightNeutralX === null) {
@@ -4951,6 +5098,19 @@ function doSearch(query) {
     }
   }
 
+  // 내가 명명한 별 (B 비행으로 발견한 별)
+  for (const s of discoverableStars) {
+    if (!s.userName) continue;
+    if (s.userName.toLowerCase().includes(q)) {
+      results.push({
+        type: 'namedStar',
+        label: `⭐ ${s.userName}`,
+        sub: '내가 발견한 별',
+        position: s.basePos,
+      });
+    }
+  }
+
   // 외부 은하
   for (const g of galaxyItems) {
     if (
@@ -5014,6 +5174,10 @@ function navigateToResult(r) {
       setFollowGalaxy(r.group);
       setStatus(`🚀 → ${r.label} 비행 중…`);
       break;
+    case 'namedStar':
+      setFollowAim(r.position);
+      setStatus(`🔍 → ${r.label}`);
+      break;
   }
 }
 
@@ -5053,6 +5217,324 @@ document.addEventListener('mousedown', e => {
     searchResults.hidden = true;
   }
 });
+
+// ─── 별 발견 + 명명 시스템 ────────────────────────────
+// 무명 별 ~400개를 시드 기반으로 절차적 생성. B 비행 중 80 units 이내 진입 시 발견.
+// 발견된 별은 사용자가 이름을 지어 localStorage에 영속 저장 → 다음 방문에도 유지.
+const DISCOVERY_STAR_COUNT  = 400;
+const DISCOVERY_SEED        = 0xABBA55;     // 좌표·색·크기 고정 (세션 간 동일)
+const DISCOVERY_RADIUS_NEAR = 100;          // 이 거리 이내 진입 시 발견
+const DISCOVERY_HINT_RADIUS = 500;          // 이 거리 이내에선 깜빡임 힌트
+const DISCOVERY_INTRO_MS    = 2000;         // "별을 발견하였습니다" 표시 시간
+const DISCOVERY_CAMERA_MS   = 1200;         // 명명 화면 카메라 보간 시간
+const DISCOVERY_COOLDOWN_MS = 3000;         // 다음 발견까지 lockout
+const DISCOVERY_POOL_R_MIN  = 350;
+const DISCOVERY_POOL_R_MAX  = 1500;
+
+const discoverableStars = [];
+let discoveryActive   = false;        // true 면 B 비행 입력 차단
+let discoveryStar     = null;
+let discoveryLastFire = 0;
+let discoveryCamAnim  = null;         // { fromPos, fromTarget, toPos, toTarget, t, dur }
+let _discoveryClockMs = 0;
+
+// 시드 PRNG (mulberry32) — 항상 같은 별 풀 재현
+function _mulberry32(seed) {
+  return function() {
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// 색온도 → RGB (별 분광형 단순 매핑)
+const _STAR_COLOR_STOPS = [
+  [0.65, 0.78, 1.00],  // 파란 거성 O/B
+  [0.90, 0.95, 1.00],  // 청백 A
+  [1.00, 1.00, 0.95],  // 흰-노랑 F/G
+  [1.00, 0.85, 0.55],  // 노랑-주황 K
+  [1.00, 0.55, 0.30],  // 주황 K말
+  [1.00, 0.40, 0.20],  // 빨강 왜성 M
+];
+function _starColorFromTemp(t) {
+  const idx = t * (_STAR_COLOR_STOPS.length - 1);
+  const i = Math.floor(idx);
+  const f = idx - i;
+  const a = _STAR_COLOR_STOPS[i];
+  const b = _STAR_COLOR_STOPS[Math.min(i + 1, _STAR_COLOR_STOPS.length - 1)];
+  return new THREE.Color(
+    a[0] + (b[0] - a[0]) * f,
+    a[1] + (b[1] - a[1]) * f,
+    a[2] + (b[2] - a[2]) * f
+  );
+}
+
+// 공유 발광 텍스처 (radial gradient)
+let _starGlowTex = null;
+function _getStarGlowTexture() {
+  if (_starGlowTex) return _starGlowTex;
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  grad.addColorStop(0.0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.2, 'rgba(255,255,255,0.85)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.30)');
+  grad.addColorStop(1.0, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  _starGlowTex = new THREE.CanvasTexture(c);
+  return _starGlowTex;
+}
+
+function initDiscoverableStars() {
+  if (discoverableStars.length > 0) return;
+  const rng = _mulberry32(DISCOVERY_SEED);
+  const glow = _getStarGlowTexture();
+  for (let i = 0; i < DISCOVERY_STAR_COUNT; i++) {
+    // 구면 균등 분포 + 반경 변화
+    const u = rng(), v = rng();
+    const theta = 2 * Math.PI * u;
+    const phi   = Math.acos(2 * v - 1);
+    const r = DISCOVERY_POOL_R_MIN + rng() * (DISCOVERY_POOL_R_MAX - DISCOVERY_POOL_R_MIN);
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.sin(phi) * Math.sin(theta);
+    const z = r * Math.cos(phi);
+
+    const tempT    = rng();                       // 0=blue, 1=red
+    const baseSize = 6 + rng() * 14;              // sprite scale 6~20
+    const color    = _starColorFromTemp(tempT);
+
+    const mat = new THREE.SpriteMaterial({
+      map: glow,
+      color: color,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.45,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(x, y, z);
+    sprite.scale.setScalar(baseSize);
+    scene.add(sprite);
+
+    discoverableStars.push({
+      id: i,
+      sprite,
+      basePos: new THREE.Vector3(x, y, z),
+      baseColor: color,
+      baseSize,
+      tempT,
+      discovered: false,
+      userName: null,
+      pulsePhase: rng() * Math.PI * 2,
+      _label: null,
+    });
+  }
+
+  // localStorage 에서 명명된 별 복원 (시드 동일 → id로 매칭됨)
+  try {
+    const saved = JSON.parse(localStorage.getItem('abyss_named_stars') || '{}');
+    for (const [id, name] of Object.entries(saved)) {
+      const s = discoverableStars[+id];
+      if (s) {
+        s.discovered = true;
+        s.userName   = name;
+        _attachStarLabel(s);
+      }
+    }
+  } catch (e) {}
+}
+
+// 명명된 별 라벨 (canvas → sprite)
+function _attachStarLabel(star) {
+  if (star._label) return;
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 56px Orbitron, sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.9)';
+  ctx.shadowBlur = 10;
+  ctx.fillText(star.userName || '?', 256, 64);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const lbl = new THREE.Sprite(mat);
+  lbl.position.copy(star.basePos);
+  lbl.position.y += star.baseSize * 1.8;
+  lbl.scale.set(50, 12, 1);
+  scene.add(lbl);
+  star._label = lbl;
+}
+
+// 매 프레임: 힌트 펄스 + 발견 체크
+const _discCamTmp = new THREE.Vector3();
+function tickStarDiscovery(timeSec, dt) {
+  if (discoverableStars.length === 0) return;
+  camera.getWorldPosition(_discCamTmp);
+
+  for (const s of discoverableStars) {
+    if (s.discovered) {
+      s.sprite.material.opacity = 0.85;
+      s.sprite.scale.setScalar(s.baseSize * 1.15);
+      continue;
+    }
+    const d = _discCamTmp.distanceTo(s.basePos);
+    if (d < DISCOVERY_HINT_RADIUS) {
+      const proximity = 1 - d / DISCOVERY_HINT_RADIUS;     // 0~1
+      const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.5 + s.pulsePhase);
+      const op   = 0.35 + proximity * 0.4 + pulse * proximity * 0.4;
+      s.sprite.material.opacity = Math.min(op, 1.0);
+      const sz = s.baseSize * (1 + proximity * 0.6 * (0.6 + pulse * 0.5));
+      s.sprite.scale.setScalar(sz);
+    } else {
+      s.sprite.material.opacity = 0.35;
+      s.sprite.scale.setScalar(s.baseSize);
+    }
+  }
+
+  if (discoveryActive) return;
+  if (fingerMenu.mode !== 'B') return;
+  const now = performance.now();
+  if (now - discoveryLastFire < DISCOVERY_COOLDOWN_MS) return;
+
+  let nearest = null, nearestDist = Infinity;
+  for (const s of discoverableStars) {
+    if (s.discovered) continue;
+    const d = _discCamTmp.distanceTo(s.basePos);
+    if (d < DISCOVERY_RADIUS_NEAR && d < nearestDist) {
+      nearest = s; nearestDist = d;
+    }
+  }
+  if (nearest) {
+    discoveryLastFire = now;
+    enterDiscovery(nearest);
+  }
+}
+
+// 카메라 보간 (명명 화면 진입 시)
+function tickDiscoveryCamera(dt) {
+  if (!discoveryCamAnim) return;
+  const a = discoveryCamAnim;
+  a.t = Math.min(1, a.t + dt * 1000 / a.dur);
+  const ease = 1 - Math.pow(1 - a.t, 3);
+  camera.position.lerpVectors(a.fromPos, a.toPos, ease);
+  controls.target.lerpVectors(a.fromTarget, a.toTarget, ease);
+  if (a.t >= 1) discoveryCamAnim = null;
+}
+
+function enterDiscovery(star) {
+  discoveryActive = true;
+  discoveryStar   = star;
+  // 모든 follow 해제
+  followKey = null; followLocalOffset = null;
+  followMoonMesh = null; followAim = null; followGalaxyGroup = null;
+  // OrbitControls 잠금 — 명명 중 마우스 드래그 차단
+  if (controls) controls.enabled = false;
+
+  const intro = document.getElementById('discoveryIntro');
+  if (intro) {
+    intro.hidden = false;
+    requestAnimationFrame(() => intro.classList.add('visible'));
+  }
+  setTimeout(() => {
+    if (intro) {
+      intro.classList.remove('visible');
+      setTimeout(() => { intro.hidden = true; }, 600);
+    }
+    enterStarNaming(star);
+  }, DISCOVERY_INTRO_MS);
+}
+
+function enterStarNaming(star) {
+  // 카메라를 별 정면 적당한 거리로 보간
+  const dist = Math.max(star.baseSize * 4.5, 45);
+  const dir = new THREE.Vector3().subVectors(camera.position, star.basePos);
+  if (dir.lengthSq() < 0.01) dir.set(0, 0, 1);
+  dir.normalize();
+  const toPos = new THREE.Vector3().copy(star.basePos).add(dir.multiplyScalar(dist));
+
+  discoveryCamAnim = {
+    fromPos:    camera.position.clone(),
+    fromTarget: controls.target.clone(),
+    toPos,
+    toTarget:   star.basePos.clone(),
+    t: 0,
+    dur: DISCOVERY_CAMERA_MS,
+  };
+
+  // 별을 더 환하게 (sun-like)
+  star.sprite.material.opacity = 1.0;
+  star.sprite.scale.setScalar(star.baseSize * 2.0);
+
+  const ui = document.getElementById('starNamingUI');
+  if (ui) {
+    ui.hidden = false;
+    requestAnimationFrame(() => ui.classList.add('visible'));
+    const input = document.getElementById('starNameInput');
+    if (input) {
+      input.value = '';
+      setTimeout(() => input.focus(), DISCOVERY_CAMERA_MS + 50);
+    }
+  }
+}
+
+function confirmStarNaming() {
+  if (!discoveryStar) return;
+  const input = document.getElementById('starNameInput');
+  const name = input ? input.value.trim() : '';
+  if (!name) {
+    if (input) input.focus();
+    return;
+  }
+  discoveryStar.userName   = name;
+  discoveryStar.discovered = true;
+  _attachStarLabel(discoveryStar);
+
+  try {
+    const saved = JSON.parse(localStorage.getItem('abyss_named_stars') || '{}');
+    saved[discoveryStar.id] = name;
+    localStorage.setItem('abyss_named_stars', JSON.stringify(saved));
+  } catch (e) {}
+
+  setStatus(`⭐ '${name}' 별이 우주에 등록되었습니다`);
+  exitStarDiscovery();
+}
+
+function skipStarNaming() {
+  // 발견은 하지 않은 상태로 닫음 (다음에 같은 별 다시 트리거 가능)
+  exitStarDiscovery();
+}
+
+function exitStarDiscovery() {
+  const intro = document.getElementById('discoveryIntro');
+  if (intro) { intro.classList.remove('visible'); intro.hidden = true; }
+  const ui = document.getElementById('starNamingUI');
+  if (ui) {
+    ui.classList.remove('visible');
+    setTimeout(() => { ui.hidden = true; }, 500);
+  }
+  discoveryActive = false;
+  discoveryStar = null;
+  if (controls) controls.enabled = true;
+}
+
+// 버튼 + 키보드 바인딩
+(function bindStarNamingUI(){
+  const submit = document.getElementById('starNameSubmit');
+  const skip   = document.getElementById('starNameSkip');
+  const input  = document.getElementById('starNameInput');
+  if (submit) submit.addEventListener('click', confirmStarNaming);
+  if (skip)   skip.addEventListener('click', skipStarNaming);
+  if (input)  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmStarNaming(); }
+    else if (e.key === 'Escape') { e.preventDefault(); skipStarNaming(); }
+  });
+})();
 
 // ─── 리사이즈 ────────────────────────────────────────
 addEventListener('resize', () => {
@@ -5139,6 +5621,11 @@ renderer.setAnimationLoop(() => {
   processGestures(dt);
   processWebcamGestures(dt);
   updateFollow(dt);
+
+  // 별 발견 시스템 — 절차 별 풀 초기화(1회) + 힌트 펄스/근접 발견 체크 + 카메라 보간
+  initDiscoverableStars();
+  tickStarDiscovery(t, dt);
+  tickDiscoveryCamera(dt);
 
   // 고립 모드: 카드 위치(애니메이션 포함)에 맞춰 연결선 매 프레임 갱신
   if (isolationKey) updateIsolationLines();
