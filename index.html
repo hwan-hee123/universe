@@ -5221,16 +5221,16 @@ document.addEventListener('mousedown', e => {
 // ─── 별 발견 + 명명 시스템 ────────────────────────────
 // 무명 별 ~400개를 시드 기반으로 절차적 생성. B 비행 중 80 units 이내 진입 시 발견.
 // 발견된 별은 사용자가 이름을 지어 localStorage에 영속 저장 → 다음 방문에도 유지.
-const DISCOVERY_STAR_COUNT  = 800;
+const DISCOVERY_STAR_COUNT  = 450;          // 듬성듬성 — 큰 부피에 흩어진 느낌
 const DISCOVERY_SEED        = 0xABBA55;     // 좌표·색·크기 고정 (세션 간 동일)
 const DISCOVERY_RADIUS_NEAR = 400;          // 이 거리 이내 진입 시 발견
-const DISCOVERY_HINT_RADIUS = 3500;         // 이 거리 이내에선 깜빡임 힌트
+const DISCOVERY_HINT_RADIUS = 4000;         // 이 거리 이내에선 깜빡임 힌트
 const DISCOVERY_INTRO_MS    = 2000;         // "별을 발견하였습니다" 표시 시간
 const DISCOVERY_CAMERA_MS   = 1200;         // 명명 화면 카메라 보간 시간
 const DISCOVERY_COOLDOWN_MS = 3000;         // 다음 발견까지 lockout
-// 깊은 성간 공간 — 태양계(해왕성 orbit 1130) 훨씬 바깥
-const DISCOVERY_POOL_R_MIN  = 3000;
-const DISCOVERY_POOL_R_MAX  = 18000;
+// 태양계(해왕성 orbit = 1130)의 3배(3390) 바깥부터 별 분포 — 태양계 탐험을 방해하지 않음
+const DISCOVERY_POOL_R_MIN  = 3500;
+const DISCOVERY_POOL_R_MAX  = 22000;
 
 const discoverableStars = [];
 let discoveryActive   = false;        // true 면 B 비행 입력 차단
