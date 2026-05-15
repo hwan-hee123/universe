@@ -5388,13 +5388,15 @@ function initDiscoverableStars() {
   } catch (e) {}
 }
 
-// 명명된 별 라벨 (canvas → sprite)
+// 명명된 별 라벨 (canvas → sprite) — 행성 라벨과 동일한 거리 기반 자동 스케일링
 function _attachStarLabel(star) {
   if (star._label) return;
   const c = document.createElement('canvas');
   c.width = 512; c.height = 128;
   const ctx = c.getContext('2d');
-  ctx.font = 'bold 56px Orbitron, sans-serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(0, 0, 512, 128);
+  ctx.font = 'bold 56px system-ui, sans-serif';
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -5402,11 +5404,16 @@ function _attachStarLabel(star) {
   ctx.shadowBlur = 10;
   ctx.fillText(star.userName || '?', 256, 64);
   const tex = new THREE.CanvasTexture(c);
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   const lbl = new THREE.Sprite(mat);
   lbl.position.copy(star.basePos);
   lbl.position.y += star.baseSize * 1.8;
-  lbl.scale.set(50, 12, 1);
+  lbl.scale.set(20, 5, 1);            // 첫 프레임에 tickLabels()가 즉시 갱신
+  // 거리 기반 자동 스케일링 — 행성 라벨과 동일한 sizeParams
+  // (멀어지면 작아지고 가까워지면 커짐, min~max로 클램프)
+  lbl.userData.sizeParams = { factor: 0.05, min: 4, max: 80 };
+  allLabels.push(lbl);
   scene.add(lbl);
   star._label = lbl;
 }
