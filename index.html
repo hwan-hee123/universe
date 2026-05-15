@@ -5221,15 +5221,16 @@ document.addEventListener('mousedown', e => {
 // ─── 별 발견 + 명명 시스템 ────────────────────────────
 // 무명 별 ~400개를 시드 기반으로 절차적 생성. B 비행 중 80 units 이내 진입 시 발견.
 // 발견된 별은 사용자가 이름을 지어 localStorage에 영속 저장 → 다음 방문에도 유지.
-const DISCOVERY_STAR_COUNT  = 400;
+const DISCOVERY_STAR_COUNT  = 500;
 const DISCOVERY_SEED        = 0xABBA55;     // 좌표·색·크기 고정 (세션 간 동일)
-const DISCOVERY_RADIUS_NEAR = 100;          // 이 거리 이내 진입 시 발견
-const DISCOVERY_HINT_RADIUS = 500;          // 이 거리 이내에선 깜빡임 힌트
+const DISCOVERY_RADIUS_NEAR = 200;          // 이 거리 이내 진입 시 발견
+const DISCOVERY_HINT_RADIUS = 1500;         // 이 거리 이내에선 깜빡임 힌트
 const DISCOVERY_INTRO_MS    = 2000;         // "별을 발견하였습니다" 표시 시간
 const DISCOVERY_CAMERA_MS   = 1200;         // 명명 화면 카메라 보간 시간
 const DISCOVERY_COOLDOWN_MS = 3000;         // 다음 발견까지 lockout
-const DISCOVERY_POOL_R_MIN  = 350;
-const DISCOVERY_POOL_R_MAX  = 1500;
+// 태양계 바깥 (해왕성 orbit = 1130) ~ 깊은 성간 공간
+const DISCOVERY_POOL_R_MIN  = 1500;
+const DISCOVERY_POOL_R_MAX  = 6000;
 
 const discoverableStars = [];
 let discoveryActive   = false;        // true 면 B 비행 입력 차단
@@ -5304,7 +5305,7 @@ function initDiscoverableStars() {
     const z = r * Math.cos(phi);
 
     const tempT    = rng();                       // 0=blue, 1=red
-    const baseSize = 6 + rng() * 14;              // sprite scale 6~20
+    const baseSize = 25 + rng() * 55;             // sprite scale 25~80 (먼 거리에서도 보이게)
     const color    = _starColorFromTemp(tempT);
 
     const mat = new THREE.SpriteMaterial({
