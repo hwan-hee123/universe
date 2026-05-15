@@ -193,20 +193,23 @@
   #introScreen .spark,
   #introScreen .ring { display: none; }
 
-  /* ─── 인트로 씬: 원본 이미지 한 장 그대로 표시 (자르지 않음) ─── */
+  /* ─── 인트로 씬: 영상 또는 이미지 ─── */
   #introScreen .scene {
     position: absolute; inset: 0;
     pointer-events: none;
   }
-  #introScreen .full-image {
+  /* 영상 (자동재생 루프). 영상 파일이 없으면 poster의 이미지가 그대로 보임 */
+  #introScreen .full-video {
     position: absolute; inset: 0;
-    background-image: url('assets/abyss_intro.jpg');
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    object-position: center;
+    background: #000;
     opacity: 0;
     animation: introFadeIn 1.4s 0.3s ease-out forwards;
   }
+  /* 옛 .full-image 클래스 — 호환을 위해 유지하되 사용 안 함 */
+  #introScreen .full-image { display: none; }
   @keyframes introFadeIn {
     from { opacity: 0; transform: scale(1.02); }
     to   { opacity: 1; transform: scale(1.0); }
@@ -452,8 +455,13 @@
 <div id="introScreen" aria-label="ABYSS intro">
   <div class="stars"></div>
   <div class="scene">
-    <!-- 원본 이미지를 자르지 않고 한 장 그대로 표시 -->
-    <div class="full-image"></div>
+    <!-- 영상 자동재생 루프. 파일이 없거나 로딩 중엔 poster의 이미지가 보임. -->
+    <video class="full-video" id="introVideo"
+           autoplay loop muted playsinline preload="auto"
+           poster="assets/abyss_intro.jpg">
+      <source src="assets/abyss_intro.mp4" type="video/mp4">
+      <source src="assets/abyss_intro.webm" type="video/webm">
+    </video>
   </div>
   <div class="flash" id="introFlash">
     <div class="core"></div>
