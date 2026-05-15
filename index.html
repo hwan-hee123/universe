@@ -1209,14 +1209,73 @@ function makeLabel(text, color, sizeParams = { factor: 0.035, min: 3, max: 200 }
 // ─── 태양 ─────────────────────────────────────────────
 const sunCenter = new THREE.Vector3(0, 80, -1500);
 const sunTex = loadPlanetTex('sunmap.jpg');
+// 태양 본체 — 색을 (2.6, 2.0, 1.3) 으로 부스트해서 밝은 픽셀이 Bloom 임계값(1.5)을
+// 넘어 강하게 발광. 표면 텍스처 디테일은 유지하면서 광량만 올림.
 const sun = new THREE.Mesh(
   new THREE.SphereGeometry(90, 64, 64),
-  new THREE.MeshBasicMaterial({ map: sunTex })
+  new THREE.MeshBasicMaterial({
+    map: sunTex,
+    color: new THREE.Color(2.6, 2.0, 1.3),
+    toneMapped: false,           // tone mapping 끔 → bloom용 raw 밝기 유지
+  })
 );
 sun.position.copy(sunCenter);
 scene.add(sun);
 
-// (구) 태양 글로우 스프라이트는 제거. Bloom 후처리가 자연스러운 발광을 처리함.
+// ─── 태양 코로나 (다층 후광) — 참조 이미지처럼 환하게 빛나는 느낌 ───
+// 절차적 radial-gradient 텍스처 1장을 색·크기·opacity 다르게 반복 사용
+const sunCoronaCanvas = document.createElement('canvas');
+sunCoronaCanvas.width = sunCoronaCanvas.height = 256;
+{
+  const ctx = sunCoronaCanvas.getContext('2d');
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0.00, 'rgba(255,255,255,1)');
+  g.addColorStop(0.12, 'rgba(255,240,200,0.92)');
+  g.addColorStop(0.30, 'rgba(255,180,90,0.55)');
+  g.addColorStop(0.55, 'rgba(255,120,40,0.25)');
+  g.addColorStop(0.80, 'rgba(255,80,20,0.08)');
+  g.addColorStop(1.00, 'rgba(255,60,10,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+}
+const sunCoronaTex = new THREE.CanvasTexture(sunCoronaCanvas);
+
+// 코로나 3단계: 핵 → 중간 → 외각
+const sunCoronaLayers = [
+  // 핵심 백열 — 작고 밝은 흰빛
+  { color: 0xffffff, opacity: 1.0,  scale: 220 },
+  // 중간 — 노란 주황 후광
+  { color: 0xffc070, opacity: 0.85, scale: 380 },
+  // 외각 — 흐릿한 주황빛 헤일로
+  { color: 0xff7733, opacity: 0.45, scale: 700 },
+];
+const sunCoronaSprites = sunCoronaLayers.map(layer => {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: sunCoronaTex,
+    color: layer.color,
+    transparent: true, opacity: layer.opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: true,
+    toneMapped: false,
+  }));
+  sprite.scale.set(layer.scale, layer.scale, 1);
+  sprite.position.copy(sunCenter);
+  scene.add(sprite);
+  return sprite;
+});
+
+// 미세한 펄스 — 코로나 크기·밝기가 천천히 살아 숨쉬듯 변동 (참조 이미지의 활동성 표현)
+const _sunCoronaBase = sunCoronaLayers.map(l => ({ scale: l.scale, opacity: l.opacity }));
+function pulseSunCorona(time){
+  const t = time * 0.0008;
+  for (let i = 0; i < sunCoronaSprites.length; i++) {
+    const base = _sunCoronaBase[i];
+    const w = 0.05 + i * 0.02;           // 레이어마다 살짝 다른 주파수
+    const s = 1 + Math.sin(t + i) * w;
+    sunCoronaSprites[i].scale.set(base.scale * s, base.scale * s, 1);
+    sunCoronaSprites[i].material.opacity = base.opacity * (0.92 + Math.sin(t * 1.3 + i) * 0.08);
+  }
+}
 
 const sunLabel = makeLabel('태양 (Sun)', '#ffd97a', { factor: 0.045, min: 8, max: 300 });
 sunLabel.position.set(sunCenter.x, sunCenter.y + 130, sunCenter.z);
@@ -4294,6 +4353,7 @@ renderer.setAnimationLoop(() => {
   const t  = clock.elapsedTime;
 
   sun.rotation.y += dt * 0.05;
+  pulseSunCorona(performance.now());      // 태양 코로나 미세 펄스
 
   for (const p of PLANETS) {
     const mesh = planetMeshes[p.key];
