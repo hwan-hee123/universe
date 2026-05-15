@@ -2776,40 +2776,42 @@ function setupWireframeView() {
   visor.position.set(0, 0.02, 0);
   wireHead.add(visor);
 
-  // VR 헤드셋 바이저 박스 — 머리 앞면에 직사각형 와이어프레임 (참조 이미지의 고글 모양)
+  // VR 헤드셋 바이저 박스 — 최초 위치는 가짜(앞면 중앙). 얼굴 첫 검출 시
+  // 실제 눈 사이 중점으로 재배치됨 (captureCanonicalFace).
   const headsetGeo = new THREE.BoxGeometry(
-    headRadius * 1.65,  // 가로 — 머리보다 좀 넓음 (고글이 머리 양옆으로 튀어나옴)
-    headRadius * 0.58,  // 세로 — 눈 위·아래까지 커버
-    headRadius * 0.40,  // 두께 — 앞으로 튀어나옴
+    headRadius * 1.65, headRadius * 0.58, headRadius * 0.40,
   );
   const headsetWireGeo = new THREE.WireframeGeometry(headsetGeo);
   const headsetWire = new THREE.LineSegments(headsetWireGeo, new THREE.LineBasicMaterial({
-    color: 0xffffff,
-    transparent: true, opacity: 0.85,
+    color: 0xffffff, transparent: true, opacity: 0.9,
     blending: THREE.AdditiveBlending,
     depthWrite: false, depthTest: false,
   }));
   headsetWire.position.set(0, 0.0, headRadius * 0.72);
+  headsetWire.renderOrder = 5;
   wireHead.add(headsetWire);
+  wireHead.userData.visorBox = headsetWire;
 
-  // 바이저 렌즈 — 박스 앞면에 두 개의 작은 사각 (눈 위치)으로 고글 인상 강화
-  // 두 렌즈를 가로로 나란히 배치
+  // 바이저 렌즈 — 두 눈 위치에 사각 와이어. 첫 검출 시 실제 눈 좌표로 이동.
   const lensWidth  = headRadius * 0.55;
   const lensHeight = headRadius * 0.36;
-  const lensSep    = headRadius * 0.35;  // 두 렌즈 중심 간 절반 거리
-  const lensZ      = headRadius * 0.72 + headRadius * 0.21 + 0.001; // 박스 앞면보다 살짝 앞
+  const lensSep    = headRadius * 0.35;
+  const lensZ      = headRadius * 0.72 + headRadius * 0.21 + 0.001;
+  const lenses = [];
   for (const side of [-1, 1]) {
     const lensGeo = new THREE.PlaneGeometry(lensWidth, lensHeight);
     const lensEdges = new THREE.EdgesGeometry(lensGeo);
     const lens = new THREE.LineSegments(lensEdges, new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true, opacity: 0.9,
+      color: 0xffffff, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending,
       depthWrite: false, depthTest: false,
     }));
     lens.position.set(side * lensSep, 0, lensZ);
+    lens.renderOrder = 6;
     wireHead.add(lens);
+    lenses.push(lens);
   }
+  wireHead.userData.lenses = lenses;
 
   // 머리 정점들의 정점 색을 매 프레임 깊이로 갱신할 데이터를 캐시
   wireHead.userData.wireGeo = headWireGeo;
@@ -2830,130 +2832,180 @@ function setupWireframeView() {
   });
 }
 
-// MediaPipe FaceLandmarker 결과를 받아 두 종류 렌더링:
-//   1. wireHead 그룹 (icosahedron + visor + lenses)을 4x4 변환 매트릭스로 회전
-//   2. 478 랜드마크를 tessellation 토폴로지로 연결한 라이브 face mesh
-// faceLandmarks/matrixData가 null이고 캘리브레이션 화면이 아니면 모두 숨김.
+// 한 번 캡처한 canonical 얼굴 메시를 wireHead의 자식으로 추가하고,
+// 동시에 visor/lens를 실제 눈 좌표로 이동시킴. 이후 프레임에서는 입/표정이
+// 따라가지 않고 머리 회전만 매트릭스로 적용됨.
+// matrixData가 있으면 그 회전의 역을 미리 풀어줘서, 캡처 시 얼굴이 비뚤어져
+// 있었더라도 나중에 매트릭스가 적용되면 정확한 방향으로 보이도록 함.
+function captureCanonicalFace(faceLandmarks, matrixData){
+  if (!mp.FACE_TESSELATION || !wireHead) return;
+
+  // 정규화 기준: 두 눈 외각(33, 263) 거리 → 머리 비율과 맞추기 위한 스케일
+  const lmL = faceLandmarks[33];
+  const lmR = faceLandmarks[263];
+  const eyeDist = Math.hypot(lmR.x - lmL.x, lmR.y - lmL.y);
+  const TARGET_EYE_DIST = 0.22;     // 두 눈 사이 거리(ortho 단위)
+  const SCALE = TARGET_EYE_DIST / Math.max(eyeDist, 0.001);
+  const Z_BOOST = 2.5;              // z 깊이 강조
+
+  // 모든 랜드마크의 중심(centroid)
+  let cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < faceLandmarks.length; i++) {
+    cx += faceLandmarks[i].x;
+    cy += faceLandmarks[i].y;
+    cz += faceLandmarks[i].z;
+  }
+  cx /= faceLandmarks.length;
+  cy /= faceLandmarks.length;
+  cz /= faceLandmarks.length;
+
+  // 캡처 시 머리 회전의 역 quaternion — 이후 wireHead가 회전을 다시
+  // 적용할 때 over-rotation을 막기 위해 캐노니컬 단계에서 한번 풀어줌
+  const _capMat = new THREE.Matrix4().fromArray(matrixData);
+  const _capQ   = new THREE.Quaternion().setFromRotationMatrix(_capMat);
+  const _capFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
+  _capQ.multiply(_capFlip);
+  const inverseQ = _capQ.clone().invert();
+  const _tmpV = new THREE.Vector3();
+
+  // 이미지 좌표 → 머리 로컬 좌표 (mirror x, flip y, boost z) → 캡처 회전 역 적용
+  const toLocal = (lm) => {
+    _tmpV.set(
+      (cx - lm.x) * SCALE,
+      (cy - lm.y) * SCALE,
+      (cz - lm.z) * SCALE * Z_BOOST,
+    );
+    _tmpV.applyQuaternion(inverseQ);
+    return [_tmpV.x, _tmpV.y, _tmpV.z];
+  };
+
+  // ── 캐노니컬 얼굴 메시 LineSegments 빌드 ──
+  const conns = mp.FACE_TESSELATION;
+  const positions = new Float32Array(conns.length * 2 * 3);
+  const colors    = new Float32Array(conns.length * 2 * 3);
+  for (let i = 0; i < conns.length; i++) {
+    const A = toLocal(faceLandmarks[conns[i].start]);
+    const B = toLocal(faceLandmarks[conns[i].end]);
+    positions[i*6]   = A[0]; positions[i*6+1] = A[1]; positions[i*6+2] = A[2];
+    positions[i*6+3] = B[0]; positions[i*6+4] = B[1]; positions[i*6+5] = B[2];
+    // 정적 깊이 셰이딩 — 회전은 부모 wireHead가 처리하므로 한 번만 계산
+    const ba = THREE.MathUtils.clamp(0.30 + (A[2] + 0.10) * 2.5, 0.15, 1.0);
+    const bb = THREE.MathUtils.clamp(0.30 + (B[2] + 0.10) * 2.5, 0.15, 1.0);
+    colors[i*6]   = ba; colors[i*6+1] = ba; colors[i*6+2] = ba;
+    colors[i*6+3] = bb; colors[i*6+4] = bb; colors[i*6+5] = bb;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false,
+  });
+  faceMeshLines = new THREE.LineSegments(geo, mat);
+  faceMeshLines.renderOrder = 1;
+  wireHead.add(faceMeshLines);            // wireHead 자식 → 회전 같이 따라감
+
+  // ── visor/lens를 실제 눈 좌표로 재배치 ──
+  const rEye = toLocal({
+    x: (faceLandmarks[33].x + faceLandmarks[133].x) / 2,
+    y: (faceLandmarks[33].y + faceLandmarks[133].y) / 2,
+    z: (faceLandmarks[33].z + faceLandmarks[133].z) / 2,
+  });
+  const lEye = toLocal({
+    x: (faceLandmarks[263].x + faceLandmarks[362].x) / 2,
+    y: (faceLandmarks[263].y + faceLandmarks[362].y) / 2,
+    z: (faceLandmarks[263].z + faceLandmarks[362].z) / 2,
+  });
+  const eyeMidX = (rEye[0] + lEye[0]) / 2;
+  const eyeMidY = (rEye[1] + lEye[1]) / 2;
+  const eyeMidZ = (rEye[2] + lEye[2]) / 2;
+  const eyeSepLocal = Math.abs(lEye[0] - rEye[0]);
+
+  const visor = wireHead.userData.visorBox;
+  if (visor) {
+    // 바이저 박스 가로 크기를 눈 간격에 맞춰 재조정 + 눈 평면에 배치
+    const visorW = eyeSepLocal * 3.0;
+    const visorH = eyeSepLocal * 1.4;
+    const visorD = eyeSepLocal * 1.0;
+    visor.geometry.dispose();
+    visor.geometry = new THREE.WireframeGeometry(
+      new THREE.BoxGeometry(visorW, visorH, visorD)
+    );
+    // 박스 중심을 눈 위치 + 살짝 앞쪽
+    visor.position.set(eyeMidX, eyeMidY, eyeMidZ + visorD * 0.35);
+  }
+  const lenses = wireHead.userData.lenses;
+  if (lenses && lenses.length === 2) {
+    const lensW = eyeSepLocal * 1.05;
+    const lensH = eyeSepLocal * 0.7;
+    const lensZ = eyeMidZ + (eyeSepLocal * 1.0) * 0.85; // visor 앞면보다 살짝 앞
+    // lenses[0]은 setupWireframeView에서 side=-1, [1]은 side=+1
+    // setupWireframeView 처리에서 side=-1이 먼저 add 됨 → lenses[0]
+    // side=-1: x좌표는 -0.35*headRadius였음. 즉, 화면 LEFT (mirror 안 함).
+    // toLocal 매핑에서 33은 사용자의 오른쪽 눈인데 mirror 후 화면 LEFT.
+    // 따라서 rEye = 화면 LEFT, lEye = 화면 RIGHT.
+    for (let i = 0; i < 2; i++) {
+      const eyePos = (i === 0) ? rEye : lEye;
+      lenses[i].geometry.dispose();
+      lenses[i].geometry = new THREE.EdgesGeometry(new THREE.PlaneGeometry(lensW, lensH));
+      lenses[i].position.set(eyePos[0], eyePos[1], lensZ);
+    }
+  }
+
+  wireHead.userData.canonicalCaptured = true;
+}
+
+// MediaPipe FaceLandmarker 결과를 받아 처리:
+//   1. 첫 검출 시: canonical 얼굴 메시 캡처 + visor/lens를 실제 눈 위치로 이동
+//   2. 매 프레임: 4x4 변환 매트릭스로 wireHead 전체 그룹(얼굴메시 + 바이저 + 렌즈 + 구체) 회전
+// → 표정 변화는 무시되고 머리 회전만 반영됨.
 function updateWireframeHead(faceLandmarks, matrixData){
   if (!wireHead) return;
   const showCalib = window.__showCalibHead;
   const haveFace  = !!(faceLandmarks && faceLandmarks.length > 0);
   const haveMat   = !!matrixData;
 
-  if (!showCalib || !(haveFace || haveMat)) {
+  if (!showCalib || !haveMat) {
     wireHead.visible = false;
-    if (faceMeshLines) faceMeshLines.visible = false;
     return;
   }
   // 첫 검출 시 캘리브레이션 화면에 알림
   if (window.__abyssFaceSeen) { window.__abyssFaceSeen(); window.__abyssFaceSeen = null; }
 
-  // ── wireHead (visor + lenses + icosahedron) 회전 (매트릭스 기반) ──
-  if (haveMat) {
-    wireHead.visible = true;
-    _headMat4.fromArray(matrixData);
-    _headTargetQuat.setFromRotationMatrix(_headMat4);
-    const flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
-    _headTargetQuat.multiply(flip);
-    wireHead.quaternion.slerp(_headTargetQuat, 0.35);
+  wireHead.visible = true;
 
-    // icosahedron은 라이브 face mesh가 있으면 숨김 (디테일 메시가 대체)
-    if (wireHead.userData.headWire) {
-      wireHead.userData.headWire.visible = !haveFace;
-    }
-
-    // icosahedron 깊이 셰이딩 (안 보이면 스킵)
-    if (wireHead.userData.headWire?.visible) {
-      const wireGeo = wireHead.userData.wireGeo;
-      const base    = wireHead.userData.basePositions;
-      const colors  = wireGeo.attributes.color.array;
-      const q = wireHead.quaternion;
-      for (let i = 0; i < base.length; i += 3) {
-        const x = base[i], y = base[i+1], z = base[i+2];
-        const ix =  q.w*x + q.y*z - q.z*y;
-        const iy =  q.w*y + q.z*x - q.x*z;
-        const iz =  q.w*z + q.x*y - q.y*x;
-        const iw = -q.x*x - q.y*y - q.z*z;
-        const rz = ix*-q.x + iy*-q.y + iz*q.w + iw*-q.z;
-        const r = wireHead.userData.radius;
-        const dn = THREE.MathUtils.clamp((rz / r) * 0.5 + 0.5, 0, 1);
-        const b = 0.25 + dn * 0.75;
-        colors[i] = b; colors[i+1] = b; colors[i+2] = b;
-      }
-      wireGeo.attributes.color.needsUpdate = true;
-    }
-  } else {
-    wireHead.visible = false;
+  // 첫 얼굴 검출 → canonical 얼굴 메시 캡처 + 바이저/렌즈 실제 눈 위치로 이동
+  if (haveFace && !wireHead.userData.canonicalCaptured) {
+    captureCanonicalFace(faceLandmarks, matrixData);
   }
 
-  // ── 라이브 face mesh (478 랜드마크 + tessellation) ──
-  if (haveFace && mp.FACE_TESSELATION) {
-    // 첫 사용 시 LineSegments 생성 (lazy)
-    if (!faceMeshLines) {
-      const conns = mp.FACE_TESSELATION;
-      const positions = new Float32Array(conns.length * 2 * 3);
-      const colors    = new Float32Array(conns.length * 2 * 3);
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
-      const mat = new THREE.LineBasicMaterial({
-        vertexColors: true,
-        transparent: true, opacity: 0.7,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false, depthTest: false,
-      });
-      faceMeshLines = new THREE.LineSegments(geo, mat);
-      wireScene.add(faceMeshLines);
-    }
-    faceMeshLines.visible = true;
+  // 머리 회전 — 매트릭스에서 회전 추출
+  _headMat4.fromArray(matrixData);
+  _headTargetQuat.setFromRotationMatrix(_headMat4);
+  const flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
+  _headTargetQuat.multiply(flip);
+  wireHead.quaternion.slerp(_headTargetQuat, 0.35);
 
-    // 안정적인 스케일을 위해 두 눈 외각(33, 263) 사이 거리 기준으로 정규화
-    const lmL = faceLandmarks[33];
-    const lmR = faceLandmarks[263];
-    const eyeDist = Math.hypot(lmR.x - lmL.x, lmR.y - lmL.y);
-    const TARGET_EYE_DIST = 0.20;   // ortho 단위
-    const SCALE = TARGET_EYE_DIST / Math.max(eyeDist, 0.001);
-
-    // 모든 랜드마크 평균(centroid)으로 중심 정렬
-    let cx = 0, cy = 0, cz = 0;
-    for (let i = 0; i < faceLandmarks.length; i++) {
-      cx += faceLandmarks[i].x;
-      cy += faceLandmarks[i].y;
-      cz += faceLandmarks[i].z;
-    }
-    cx /= faceLandmarks.length;
-    cy /= faceLandmarks.length;
-    cz /= faceLandmarks.length;
-
-    const conns = mp.FACE_TESSELATION;
-    const pos = faceMeshLines.geometry.attributes.position.array;
-    const col = faceMeshLines.geometry.attributes.color.array;
-    // z 폭이 좁아서 평면적으로 보이는 걸 보정 — z만 가중치 ↑
-    const Z_BOOST = 3.0;
-    for (let i = 0; i < conns.length; i++) {
-      const c = conns[i];
-      const a = faceLandmarks[c.start];
-      const b = faceLandmarks[c.end];
-      // 이미지→스크린 좌표 매핑: x mirror, y flip, z flip + boost
-      const ax = (cx - a.x) * SCALE;
-      const ay = (cy - a.y) * SCALE;
-      const az = (cz - a.z) * SCALE * Z_BOOST;
-      const bx = (cx - b.x) * SCALE;
-      const by = (cy - b.y) * SCALE;
-      const bz = (cz - b.z) * SCALE * Z_BOOST;
-      pos[i*6]   = ax; pos[i*6+1] = ay; pos[i*6+2] = az;
-      pos[i*6+3] = bx; pos[i*6+4] = by; pos[i*6+5] = bz;
-      // 깊이 기반 밝기 — 카메라 가까울수록 밝게
-      const ba = THREE.MathUtils.clamp(0.25 + (az + 0.15) * 2.5, 0.1, 1.0);
-      const bb = THREE.MathUtils.clamp(0.25 + (bz + 0.15) * 2.5, 0.1, 1.0);
-      col[i*6]   = ba; col[i*6+1] = ba; col[i*6+2] = ba;
-      col[i*6+3] = bb; col[i*6+4] = bb; col[i*6+5] = bb;
-    }
-    faceMeshLines.geometry.attributes.position.needsUpdate = true;
-    faceMeshLines.geometry.attributes.color.needsUpdate = true;
-  } else {
-    if (faceMeshLines) faceMeshLines.visible = false;
+  // icosahedron 깊이 셰이딩 — 회전된 정점의 z 기준 밝기 (전체 머리 형태로 항상 보임)
+  const wireGeo = wireHead.userData.wireGeo;
+  const base    = wireHead.userData.basePositions;
+  const colors  = wireGeo.attributes.color.array;
+  const q = wireHead.quaternion;
+  for (let i = 0; i < base.length; i += 3) {
+    const x = base[i], y = base[i+1], z = base[i+2];
+    const ix =  q.w*x + q.y*z - q.z*y;
+    const iy =  q.w*y + q.z*x - q.x*z;
+    const iz =  q.w*z + q.x*y - q.y*x;
+    const iw = -q.x*x - q.y*y - q.z*z;
+    const rz = ix*-q.x + iy*-q.y + iz*q.w + iw*-q.z;
+    const r = wireHead.userData.radius;
+    const dn = THREE.MathUtils.clamp((rz / r) * 0.5 + 0.5, 0, 1);
+    const b = 0.25 + dn * 0.75;
+    colors[i] = b; colors[i+1] = b; colors[i+2] = b;
   }
+  wireGeo.attributes.color.needsUpdate = true;
 }
 
 function updateWireframeView(leftLm, rightLm, currentMode) {
