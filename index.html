@@ -820,26 +820,14 @@
 <!-- ─── 인트로 화면 라이프사이클 ──────────────────── -->
 <script>
 (function(){
-  // ── 배경 음악 — 페이지 로드 즉시 시도하고, 브라우저가 자동재생 막으면
-  //   첫 사용자 이벤트(클릭/터치/키)에서 재시도. 한 번 시작되면 끝까지 루프. ──
+  // ── 배경 음악 — 캘리브레이션(머리 트래킹) 끝나고 인트로로 넘어갈 때 시작 ──
+  // 음원만 미리 preload해두고, 실제 play()는 endCalibration에서 호출됨.
   const bgm = document.getElementById('bgm');
-  if (bgm) {
-    bgm.volume = 0.45;             // 너무 시끄럽지 않게 시작 (조정 가능)
-    const tryPlayBgm = () => {
-      if (!bgm.paused) return;
-      const p = bgm.play();
-      if (p && typeof p.catch === 'function') p.catch(() => {});
-    };
-    tryPlayBgm();                  // 일단 자동재생 시도
-    // 자동재생 실패 시 첫 user gesture에서 재시도
-    const events = ['click', 'keydown', 'touchstart', 'pointerdown'];
-    const onFirstGesture = () => {
-      tryPlayBgm();
-      if (!bgm.paused) {
-        events.forEach(ev => window.removeEventListener(ev, onFirstGesture, true));
-      }
-    };
-    events.forEach(ev => window.addEventListener(ev, onFirstGesture, true));
+  if (bgm) bgm.volume = 0.45;
+  function startBgm(){
+    if (!bgm || !bgm.paused) return;
+    const p = bgm.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
   }
 
   // ── 화면 순서: 캘리브 → 인트로(1회) → 은하(무한루프) → 우주씬 ──
@@ -987,6 +975,8 @@
       if (wc) wc.style.zIndex = '';
       // intro 표시 (intro가 z-index 9999로 calib 위에 깔림) → 자연스러운 크로스페이드
       startIntro();
+      // 배경 음악 시작 — 캘리브 통과 사용자 제스처 컨텍스트라 autoplay 정책 통과
+      startBgm();
       calib.classList.add('fading');
       setTimeout(() => calib.remove(), 1300);
     }
