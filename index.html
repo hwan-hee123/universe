@@ -2663,7 +2663,10 @@ function enterIsolation(key){
   if (typeof sunCoronaSprites !== 'undefined' && sunCoronaSprites) {
     sunCoronaSprites.forEach(s => s.visible = false);
   }
-  for (const moon of allMoons) moon.visible = false;
+  for (const moon of allMoons) {
+    moon.visible = false;
+    if (moon.userData.label) moon.userData.label.visible = false;  // 위성 라벨도 숨김
+  }
 
   // 카메라를 태양 앞쪽(+Z)에 배치 → 카메라가 행성을 바라보면 태양은 등 뒤
   camera.position.set(sunCenter.x, sunCenter.y, sunCenter.z + ISO_CAMERA_Z_OFFSET);
@@ -2687,7 +2690,10 @@ function exitIsolation(){
   if (typeof sunCoronaSprites !== 'undefined' && sunCoronaSprites) {
     sunCoronaSprites.forEach(s => s.visible = true);
   }
-  for (const moon of allMoons) moon.visible = true;
+  for (const moon of allMoons) {
+    moon.visible = true;
+    if (moon.userData.label) moon.userData.label.visible = true;
+  }
   isolationKey = null;
   isolationMesh = null;
   isolationOrigScale = null;
@@ -4544,7 +4550,11 @@ renderer.setAnimationLoop(() => {
       mesh.rotation.y += dt * p.spin;
       if (mesh.userData.cloudsMesh) mesh.userData.cloudsMesh.rotation.y += dt * 0.08;
       const label = mesh.userData.label;
-      if (label) label.position.set(mesh.position.x, mesh.position.y + p.radius + 22, mesh.position.z);
+      if (label) {
+        // 고립 시 행성이 스케일 업 되므로, 실제 시각 반경(radius × scale)을 기준으로 라벨 위에 배치
+        const visualR = p.radius * mesh.scale.y;
+        label.position.set(mesh.position.x, mesh.position.y + visualR + 30, mesh.position.z);
+      }
       continue;
     }
     mesh.userData.angle += dt * p.speed;
