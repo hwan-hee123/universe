@@ -2969,6 +2969,10 @@ function updateIsolationLines(){
     if (card.style.display === 'none') return;
     const r = card.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return;
+    // 카드의 현재 애니메이션 진행도 — cardIn(opacity 0→1) 그대로 따라감
+    const cardOpacity = parseFloat(getComputedStyle(card).opacity) || 0;
+    if (cardOpacity <= 0.01) return;   // 아직 보이지 않으면 선도 그리지 않음
+
     // 행성 중심에서 카드의 가장 가까운 모서리 (좌·우, 상·하)
     const tx = (r.left + r.right)  > 2 * cx ? r.left : r.right;
     const ty = (r.top  + r.bottom) > 2 * cy ? r.top  : r.bottom;
@@ -2993,7 +2997,7 @@ function updateIsolationLines(){
     line.setAttribute('stroke', '#fff');
     line.setAttribute('stroke-width', '1.6');
     line.setAttribute('stroke-linecap', 'round');
-    line.setAttribute('opacity', '0.85');
+    line.setAttribute('opacity', (cardOpacity * 0.85).toFixed(3));
     svg.appendChild(line);
 
     // 끝 원 — 행성쪽 (시작점) 에 배치
@@ -3002,6 +3006,7 @@ function updateIsolationLines(){
     dot.setAttribute('cy', sy);
     dot.setAttribute('r', '4');
     dot.setAttribute('fill', '#fff');
+    dot.setAttribute('opacity', (cardOpacity * 0.95).toFixed(3));
     svg.appendChild(dot);
   });
 }
