@@ -2936,18 +2936,42 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 function updateIsolationLines(){
   const svg = document.getElementById('isolationLines');
   const cards = document.querySelectorAll('#isolationInfo .info-card');
-  if (!svg || !cards.length) return;
-  // SVG 좌표계를 화면 픽셀과 1:1로 매핑 (viewBox + width/height 명시)
+  if (!svg) return;
+
+  // ── 인라인 스타일로 가시성 강제 (CSS가 무효화돼도 보이도록) ──
+  svg.style.position      = 'fixed';
+  svg.style.top           = '0';
+  svg.style.left          = '0';
+  svg.style.width         = '100vw';
+  svg.style.height        = '100vh';
+  svg.style.zIndex        = '9999';
+  svg.style.pointerEvents = 'none';
+  svg.style.overflow      = 'visible';
+  svg.style.display       = 'block';
+
+  // SVG 좌표계를 화면 픽셀과 1:1로 매핑
   const W = innerWidth, H = innerHeight;
   svg.setAttribute('width', W);
   svg.setAttribute('height', H);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  // 기존 선 모두 제거
+  // 기존 자식 모두 제거
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
   const cx = W / 2;
   const cy = H / 2;
   const planetScreenRadius = H * 0.11;   // 행성 화면 반경 추정
+
+  // ── 디버그: 화면 좌상단(0,0)→우하단(W,H) 빨간 대각선 (SVG 렌더링 자체 동작 검증) ──
+  const debug = document.createElementNS(SVG_NS, 'line');
+  debug.setAttribute('x1', 0);
+  debug.setAttribute('y1', 0);
+  debug.setAttribute('x2', W);
+  debug.setAttribute('y2', H);
+  debug.setAttribute('stroke', 'red');
+  debug.setAttribute('stroke-width', '3');
+  svg.appendChild(debug);
+
+  if (!cards.length) return;
 
   cards.forEach(card => {
     if (card.style.display === 'none') return;
@@ -2969,12 +2993,16 @@ function updateIsolationLines(){
     line.setAttribute('y1', sy);
     line.setAttribute('x2', tx);
     line.setAttribute('y2', ty);
+    line.setAttribute('stroke', '#fff');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('stroke-linecap', 'round');
     svg.appendChild(line);
 
     const dot = document.createElementNS(SVG_NS, 'circle');
     dot.setAttribute('cx', tx);
     dot.setAttribute('cy', ty);
-    dot.setAttribute('r', '3');
+    dot.setAttribute('r', '4');
+    dot.setAttribute('fill', '#fff');
     svg.appendChild(dot);
   });
 }
