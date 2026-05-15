@@ -457,9 +457,10 @@
 <div id="introScreen" hidden aria-label="ABYSS intro">
   <div class="stars"></div>
   <div class="scene">
-    <!-- 영상 한 번 자동재생 후 마지막 프레임에서 정지. 로딩 중엔 검은 배경. -->
+    <!-- 영상은 캘리브 끝나고 인트로 표시될 때 startIntro()에서 명시적으로 재생.
+         autoplay 빼고 preload만 둠 → 백그라운드 다운로드는 하되 자동 재생 안 함. -->
     <video class="full-video" id="introVideo"
-           autoplay muted playsinline preload="auto">
+           muted playsinline preload="auto">
       <source src="assets/abyss_intro.mp4" type="video/mp4">
       <source src="assets/abyss_intro.webm" type="video/webm">
     </video>
@@ -730,6 +731,15 @@
     if (introStarted) return;
     introStarted = true;
     intro.hidden = false;
+
+    // 영상을 처음부터 재생 (캘리브 통과한 시점에 시작)
+    if (video) {
+      try {
+        video.currentTime = 0;
+        const p = video.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) {}
+    }
 
     // 텍스처 로딩이 이미 끝났으면 바로 ready 상태로
     if (texturesReady) {
