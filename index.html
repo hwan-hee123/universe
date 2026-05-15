@@ -4063,7 +4063,10 @@ function processWebcamGestures(dt) {
   const freePinch = rPinching && !onFinger;
   if (freePinch && fingerMenu.mode === 'A') {
     // A 선택 — edge trigger + 쿨다운. 같은 행성 두 번째 핀치 → 고립 모드 진입.
-    if (justPinched && now - fingerMenu.lastFireA > ACTION_COOLDOWN_A) {
+    // 고립 모드에서는 모든 행성 핀치 액션 차단 — "나가기" 버튼만 빠져나갈 수 있음.
+    if (isolationKey) {
+      mp.tag.textContent = `🔬 고립 모드 — "나가기" 버튼 핀치로만 종료 가능`;
+    } else if (justPinched && now - fingerMenu.lastFireA > ACTION_COOLDOWN_A) {
       const ndcX = (1 - rPos.x) * 2 - 1;
       const ndcY = -(rPos.y * 2 - 1);
       _mpNDC.set(ndcX, ndcY);
@@ -4077,10 +4080,10 @@ function processWebcamGestures(dt) {
         // 같은 행성/태양 두 번째 핀치 → 고립 모드 (대상을 중앙에 단독 표시)
         if ((kind === 'planet' || kind === 'sun') && key === fingerMenu.lastSelectedKey) {
           enterIsolation(key);
-          setStatus(`🔬 ${obj.userData.name || '태양'} 고립 — D 둘러보기로 회전`);
-          fingerMenu.lastSelectedKey = null;  // 세 번째 핀치는 새 선택으로 처리
+          setStatus(`🔬 ${obj.userData.name || '태양'} 고립 — "나가기" 핀치로 종료`);
+          fingerMenu.lastSelectedKey = null;
         } else {
-          // 새 천체 → 일반 비행 (handleSelection이 isolation도 자동 해제함)
+          // 새 천체 → 일반 비행
           handleSelection(obj);
           fingerMenu.lastSelectedKey = key;
         }
@@ -4089,7 +4092,7 @@ function processWebcamGestures(dt) {
         setStatus('👍 가리킨 곳에 천체 없음');
       }
     }
-    mp.tag.textContent = `A 선택 모드 — 핀치 ✓`;
+    if (!isolationKey) mp.tag.textContent = `A 선택 모드 — 핀치 ✓`;
   } else if (freePinch && fingerMenu.mode === 'D') {
     // D 둘러보기 — 핀치 드래그로 controls.target 중심 카메라 orbit
     if (fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
