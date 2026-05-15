@@ -566,6 +566,53 @@
     animation: skipBlink 2.4s ease-in-out infinite;
   }
 
+  /* ─── 행성 고립 모드 정보 카드 (3개, 행성 주변에 떠 있음) ─── */
+  #isolationInfo {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 6;     /* 우주씬 위, UI 버튼 아래 */
+  }
+  #isolationInfo[hidden] { display: none; }
+  #isolationInfo .info-card {
+    position: absolute;
+    width: 240px;
+    font-family: 'Orbitron', sans-serif;
+    color: #fff;
+    text-align: center;
+    opacity: 0;
+    animation: cardIn 0.8s 0.3s ease-out forwards;
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  #isolationInfo .info-card .label {
+    font-size: 11px; letter-spacing: 0.35em;
+    color: rgba(255,255,255,0.65);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  #isolationInfo .info-card .thumb {
+    width: 100%; height: 130px;
+    border: 1px solid rgba(255,255,255,0.35);
+    background: linear-gradient(135deg, rgba(40,60,90,0.45), rgba(15,18,28,0.65));
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    margin-bottom: 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; color: rgba(255,255,255,0.55);
+  }
+  #isolationInfo .info-card .value {
+    font-size: 13px; letter-spacing: 0.12em;
+    color: rgba(255,255,255,0.92);
+    text-shadow: 0 0 8px rgba(0,0,0,0.8);
+  }
+  /* 위치 — 행성 주변 3 지점 */
+  #isolationInfo .info-card.pos-top-right    { top: 16%;    right: 6%;  animation-delay: 0.3s; }
+  #isolationInfo .info-card.pos-bottom-left  { bottom: 14%; left:  6%;  animation-delay: 0.5s; }
+  #isolationInfo .info-card.pos-bottom-right { bottom: 14%; right: 6%;  animation-delay: 0.7s; }
+
   /* ─── 별자리 활성화 버튼 (좌측, "탐험 가이드" 바로 아래에 항상 표시) ─── */
   /* PNG 오버레이의 "탐험 가이드" 버튼 좌측 정렬 + 위 약 1cm 간격 */
   #constPopup {
@@ -611,6 +658,25 @@
 
 <!-- ─── 우주씬 UI 오버레이 (Three.js 캔버스 위에 PNG로 덮음) ─── -->
 <img id="solarSystemOverlay" src="assets/solar_system.png" alt="">
+
+<!-- ─── 행성 고립 모드 정보 카드 (3개, 행성 주변에 떠 있음) ─── -->
+<div id="isolationInfo" hidden>
+  <div class="info-card pos-top-right">
+    <div class="label">자전</div>
+    <div class="thumb">◐</div>
+    <div class="value">—</div>
+  </div>
+  <div class="info-card pos-bottom-left">
+    <div class="label">대기</div>
+    <div class="thumb">≈</div>
+    <div class="value">—</div>
+  </div>
+  <div class="info-card pos-bottom-right">
+    <div class="label">표면 온도</div>
+    <div class="thumb">°</div>
+    <div class="value">—</div>
+  </div>
+</div>
 
 <!-- ─── 별자리 활성화 버튼 (좌측 "탐험 가이드" 아래에 항상 표시, 핀치로 토글) ─── -->
 <div id="constPopup">
@@ -2628,6 +2694,82 @@ function handleSelection(target) {
   else if (kind === 'galaxy') { setFollowGalaxy(target.userData.selGroup); setStatus('👉🤏 → ' + target.userData.selGroup.userData.kr); }
 }
 
+// ─── 행성별 정보 카드 데이터 (고립 모드 표시용, 각 3개) ───
+const PLANET_DETAILS = {
+  sun:     [
+    { label: '구분',      icon: '☼', value: 'G형 주계열성' },
+    { label: '표면 온도', icon: '°', value: '약 5,500°C' },
+    { label: '핵 반응',   icon: '⚛', value: '수소 → 헬륨 융합' },
+  ],
+  mercury: [
+    { label: '공전 주기', icon: '↻', value: '88일' },
+    { label: '표면 온도', icon: '°', value: '낮 430°C / 밤 -180°C' },
+    { label: '대기',      icon: '≈', value: '거의 없음' },
+  ],
+  venus:   [
+    { label: '자전 주기', icon: '↻', value: '243일 (역방향)' },
+    { label: '대기',      icon: '≈', value: '이산화탄소 96%' },
+    { label: '표면 온도', icon: '°', value: '약 460°C' },
+  ],
+  earth:   [
+    { label: '자전 주기', icon: '◐', value: '23시간 56분' },
+    { label: '대기',      icon: '≈', value: '질소 78%, 산소 21%' },
+    { label: '평균 온도', icon: '°', value: '약 15°C' },
+  ],
+  mars:    [
+    { label: '공전 주기', icon: '↻', value: '687일' },
+    { label: '대기',      icon: '≈', value: '이산화탄소 95%, 희박' },
+    { label: '평균 온도', icon: '°', value: '약 -63°C' },
+  ],
+  jupiter: [
+    { label: '구성',      icon: '≈', value: '수소 75%, 헬륨 24%' },
+    { label: '대적반',    icon: '◉', value: '300년+ 거대 폭풍' },
+    { label: '주요 위성', icon: '✦', value: '갈릴레이 4위성' },
+  ],
+  saturn:  [
+    { label: '고리 폭',   icon: '◯', value: '약 28만 km' },
+    { label: '고리 두께', icon: '−', value: '수십 m' },
+    { label: '주요 위성', icon: '✦', value: '타이탄 (대기 보유)' },
+  ],
+  uranus:  [
+    { label: '자전축',    icon: '↻', value: '약 97° 기울어짐' },
+    { label: '대기',      icon: '≈', value: '메탄에 의한 청록색' },
+    { label: '주요 위성', icon: '✦', value: '미란다, 아리엘' },
+  ],
+  neptune: [
+    { label: '평균 풍속', icon: '≈', value: '시속 약 2,000 km' },
+    { label: '주요 위성', icon: '✦', value: '트리톤 (역행)' },
+    { label: '거리',      icon: '↗', value: '태양에서 가장 먼' },
+  ],
+};
+
+function showIsolationInfo(key){
+  const data = PLANET_DETAILS[key];
+  const root = document.getElementById('isolationInfo');
+  if (!data || !root) return;
+  const cards = root.querySelectorAll('.info-card');
+  cards.forEach((card, i) => {
+    const d = data[i];
+    if (d) {
+      card.querySelector('.label').textContent = d.label;
+      card.querySelector('.thumb').textContent = d.icon || '·';
+      card.querySelector('.value').textContent = d.value;
+      card.style.display = '';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+  // 애니메이션 리셋 — hidden 풀고 다시 displayed 되도록
+  root.hidden = false;
+  // 카드 reflow 트리거 (animation 재시작)
+  cards.forEach(c => { c.style.animation = 'none'; void c.offsetWidth; c.style.animation = ''; });
+}
+
+function hideIsolationInfo(){
+  const root = document.getElementById('isolationInfo');
+  if (root) root.hidden = true;
+}
+
 // ─── 행성 고립 모드 (같은 행성 두 번째 핀치 → 화면 중앙에 단독 표시) ───
 // 태양을 카메라와 행성 사이에 두어 "태양을 등지고 행성을 바라보는" 구도.
 // 즉 sunLight가 행성의 카메라쪽 면을 비춤 → 행성이 환하게 보임.
@@ -2676,6 +2818,9 @@ function enterIsolation(key){
   // 모든 follow 해제 (고립 모드와 충돌)
   followKey = null; followLocalOffset = null;
   followMoonMesh = null; followAim = null; followGalaxyGroup = null;
+
+  // 정보 카드 표시
+  showIsolationInfo(key);
 }
 
 function exitIsolation(){
@@ -2697,6 +2842,7 @@ function exitIsolation(){
   isolationKey = null;
   isolationMesh = null;
   isolationOrigScale = null;
+  hideIsolationInfo();
 }
 
 // ── 손목 메뉴 (G 제스처 시 표시) ──
