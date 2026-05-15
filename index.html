@@ -852,7 +852,7 @@
   <div class="row" style="color:#999;font-size:11px">왼손 손가락 끝 꼬집어 모드 선택</div>
   <div class="row"><span style="color:#ff6688">●</span> 엄지 끝 → <b>A 선택</b></div>
   <div class="row"><span style="color:#66aaff">●</span> 검지 끝 → <b>D 둘러보기</b> (↔↕)</div>
-  <div class="row"><span style="color:#88ff88">●</span> 중지 끝 → <b>B 비행</b></div>
+  <div class="row"><span style="color:#88ff88">●</span> 중지 끝 → <b>B 비행</b> (✊↑전진 ↓후진 ↔스트레이프)</div>
   <div class="row" style="color:#999;font-size:11px;margin-top:6px">그 후 오른손 핀치로 액션 실행</div>
 </div>
 
@@ -3504,7 +3504,15 @@ const fingerMenu = {
   prevRightX: null,      // 가로 델타 계산 (D 둘러보기 + A 더블핀치 둘러보기 공용)
   prevRightY: null,      // 세로 델타 계산
   lastSelectedKey: null, // A 모드에서 마지막에 선택한 천체 키 (더블 핀치 감지용)
+  flightNeutralX: null,  // B 비행 — 핀치 시작 시점의 중립 위치(X)
+  flightNeutralY: null,  // B 비행 — 핀치 시작 시점의 중립 위치(Y)
 };
+
+// B 비행 — 가변속 매개변수
+const FLIGHT_DEADZONE   = 0.04;   // 중립 주변 무반응 영역 (정규화 좌표)
+const FLIGHT_MAX_OFFSET = 0.30;   // 최대 속도 도달 거리
+const FLIGHT_MAX_SPEED  = 600;    // units / sec (전후)
+const FLIGHT_STRAFE_SPEED = 300;  // units / sec (좌우)
 
 // 둘러보기 (orbit drag) — 카메라 spherical 회전 계산용 재사용 객체 (D 모드 + A 더블핀치 공용)
 const _orbitOffset    = new THREE.Vector3();
@@ -4228,15 +4236,49 @@ function processWebcamGestures(dt) {
     fingerMenu.prevRightY = rPos.y;
     mp.tag.textContent = `D 둘러보기 — 핀치 드래그 ↔ ↕`;
   } else if (freePinch && fingerMenu.mode === 'B') {
-    // B 비행 — 카메라 전방으로 지속 이동
-    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    camera.position.addScaledVector(fwd, 60 * dt);
+    // B 비행 — 가변속. 핀치 시작 위치를 "중립" 으로 잡고,
+    // 손을 위로 올리면 전진, 아래로 내리면 후진, 좌우 기울이면 스트레이프.
+    if (fingerMenu.flightNeutralX === null) {
+      fingerMenu.flightNeutralX = rPos.x;
+      fingerMenu.flightNeutralY = rPos.y;
+    }
+    // 중립으로부터의 변위 (정규화 좌표)
+    const offY = fingerMenu.flightNeutralY - rPos.y;          // 손이 위로 = +
+    const offX = fingerMenu.flightNeutralX - rPos.x;          // 사용자의 오른쪽으로 = + (웹캠 좌우 반전 보정)
+    const mag  = Math.hypot(offX, offY);
+
+    let throttle = 0, strafe = 0;
+    if (mag > FLIGHT_DEADZONE) {
+      const fwdMag  = Math.min(Math.abs(offY) / FLIGHT_MAX_OFFSET, 1);
+      const sideMag = Math.min(Math.abs(offX) / FLIGHT_MAX_OFFSET, 1);
+      throttle = Math.sign(offY) * fwdMag;
+      strafe   = Math.sign(offX) * sideMag;
+    }
+
+    // 카메라 + look target 동시 이동 (OrbitControls와 충돌 방지)
+    const fwd   = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const right = new THREE.Vector3(1, 0,  0).applyQuaternion(camera.quaternion);
+    const dPos  = new THREE.Vector3();
+    dPos.addScaledVector(fwd,   throttle * FLIGHT_MAX_SPEED    * dt);
+    dPos.addScaledVector(right, strafe   * FLIGHT_STRAFE_SPEED * dt);
+    camera.position.add(dPos);
+    controls.target.add(dPos);
+
     followKey = null; followLocalOffset = null;
     followMoonMesh = null; followAim = null; followGalaxyGroup = null;
-    mp.tag.textContent = `B 비행 모드 — 핀치 ✓ ✊→`;
+
+    // HUD 표시
+    const pct = Math.round(Math.abs(throttle) * 100);
+    let arrow;
+    if      (throttle >  0.05) arrow = `⬆ 전진 ${pct}%`;
+    else if (throttle < -0.05) arrow = `⬇ 후진 ${pct}%`;
+    else                       arrow = `⏸ 정지`;
+    const sideTxt = Math.abs(strafe) > 0.05 ? (strafe > 0 ? '  ▶' : '  ◀') : '';
+    mp.tag.textContent = `B 비행 — ${arrow}${sideTxt}`;
   } else {
     // 액션 비활성 상태
     fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
+    fingerMenu.flightNeutralX = null; fingerMenu.flightNeutralY = null;
     if (onFinger) {
       mp.tag.textContent = `모드 변경 중: ${modeLabel(onFinger)}`;
     } else {
