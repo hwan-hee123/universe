@@ -336,8 +336,21 @@
   }
   #calibScreen[hidden] { display: none; }
   #calibScreen.fading { opacity: 0; pointer-events: none; }
-  /* 배경 / 스캔라인 제거 — 로고와 라이브 와이어프레임만 남김 */
-  #calibScreen .calib-bg,
+  /* 배경 — calib_head.png HUD 이미지 복원 (가운데 와이어프레임 머리 + 주변 HUD) */
+  #calibScreen .calib-bg {
+    position: absolute; inset: 0;
+    background-image: url('assets/calib_head.png');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.85;       /* 약간 어둡게 깔아서 라이브 와이어프레임이 위에 살아남 */
+    animation: calibBgPulse 4.5s ease-in-out infinite;
+  }
+  @keyframes calibBgPulse {
+    0%, 100% { filter: brightness(0.95); }
+    50%      { filter: brightness(1.10); }
+  }
+  /* 스캔라인은 계속 제거 */
   #calibScreen .scanline { display: none; }
 
   /* ABYSS 로고 — 인트로와 같은 톤. 화면 상단 중앙 고정 */
@@ -439,7 +452,9 @@
 <!-- 인트로 종료 후 자동으로 표시. HEAD MOUNT는 시뮬레이션, -->
 <!-- HAPTIC GLOVES는 MediaPipe 손 트래킹으로 실제 감지. -->
 <div id="calibScreen" hidden aria-label="System calibration">
-  <!-- ABYSS 로고만 남기고 배경 HUD 이미지/스캔라인 모두 제거 -->
+  <!-- 배경 HUD 이미지 (정적, 라이브 와이어프레임은 그 위에 깔림) -->
+  <div class="calib-bg"></div>
+  <!-- 상단 ABYSS 로고 -->
   <div class="calib-logo">
     <div class="chev"></div>
     <h1>ABYSS</h1>
@@ -2745,11 +2760,11 @@ function setupWireframeView() {
   headHalo.scale.set(0.08, 0.08, 1);
   wireHead.add(headHalo);
 
-  // 바이저 띠 — 머리 둘레를 수평으로 감싸는 얇은 도넛 (헤드셋 밴드 인상)
-  const visorGeo = new THREE.TorusGeometry(headRadius * 1.01, 0.008, 6, 48);
+  // 헤드셋 백 스트랩 — 머리 둘레를 감싸는 얇은 도넛 (뒷쪽 밴드 인상)
+  const visorGeo = new THREE.TorusGeometry(headRadius * 1.01, 0.007, 6, 48);
   const visorMat = new THREE.MeshBasicMaterial({
     color: 0xffffff,
-    transparent: true, opacity: 0.5,
+    transparent: true, opacity: 0.45,
     blending: THREE.AdditiveBlending,
     depthWrite: false, depthTest: false,
   });
@@ -2757,6 +2772,41 @@ function setupWireframeView() {
   visor.rotation.x = Math.PI / 2;  // XY → XZ 평면 (수평 띠)
   visor.position.set(0, 0.02, 0);
   wireHead.add(visor);
+
+  // VR 헤드셋 바이저 박스 — 머리 앞면에 직사각형 와이어프레임 (참조 이미지의 고글 모양)
+  const headsetGeo = new THREE.BoxGeometry(
+    headRadius * 1.65,  // 가로 — 머리보다 좀 넓음 (고글이 머리 양옆으로 튀어나옴)
+    headRadius * 0.58,  // 세로 — 눈 위·아래까지 커버
+    headRadius * 0.40,  // 두께 — 앞으로 튀어나옴
+  );
+  const headsetWireGeo = new THREE.WireframeGeometry(headsetGeo);
+  const headsetWire = new THREE.LineSegments(headsetWireGeo, new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false,
+  }));
+  headsetWire.position.set(0, 0.0, headRadius * 0.72);
+  wireHead.add(headsetWire);
+
+  // 바이저 렌즈 — 박스 앞면에 두 개의 작은 사각 (눈 위치)으로 고글 인상 강화
+  // 두 렌즈를 가로로 나란히 배치
+  const lensWidth  = headRadius * 0.55;
+  const lensHeight = headRadius * 0.36;
+  const lensSep    = headRadius * 0.35;  // 두 렌즈 중심 간 절반 거리
+  const lensZ      = headRadius * 0.72 + headRadius * 0.21 + 0.001; // 박스 앞면보다 살짝 앞
+  for (const side of [-1, 1]) {
+    const lensGeo = new THREE.PlaneGeometry(lensWidth, lensHeight);
+    const lensEdges = new THREE.EdgesGeometry(lensGeo);
+    const lens = new THREE.LineSegments(lensEdges, new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false, depthTest: false,
+    }));
+    lens.position.set(side * lensSep, 0, lensZ);
+    wireHead.add(lens);
+  }
 
   // 머리 정점들의 정점 색을 매 프레임 깊이로 갱신할 데이터를 캐시
   wireHead.userData.wireGeo = headWireGeo;
