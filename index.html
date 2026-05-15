@@ -274,82 +274,50 @@
   /* 옛 sprite 클래스들 — 호환을 위해 숨김 */
   #introScreen .sprite { display: none; }
 
-  /* 별 반짝임 — 화면 정중앙(이미지의 손끝 만나는 곳)에 작은 별이 자연스럽게
-     빛났다 사라짐. 큰 흰 화면이 아니라 한 점의 빛. */
+  /* 자연스러운 햇빛 글로우 — 이미지 중앙 sunrise spot에서 따뜻한 빛이 부드럽게
+     번지며 화면을 밝힘. sharp한 4-point 별빛이 아니라 dawn-light 톤. */
   #introScreen .flash {
     position: absolute; left: 50%; top: 50%;
-    width: 22px; height: 22px;
-    margin: -11px 0 0 -11px;
+    width: 60px; height: 60px;
+    margin: -30px 0 0 -30px;
     pointer-events: none;
     opacity: 0;
   }
-  /* 별 핵 — 작은 빛 점 + 부드러운 후광 */
+  /* 글로우 본체 — 흰색 핵 → 따뜻한 노랑 → 부드러운 주황 → 페이드 */
   #introScreen .flash .core {
     position: absolute; inset: 0;
     background: radial-gradient(circle,
-      #fff 0%,
-      rgba(225,235,255,0.85) 25%,
-      rgba(170,200,255,0.35) 55%,
-      transparent 100%);
+      rgba(255,255,255,1)     0%,
+      rgba(255,245,220,0.95)  8%,
+      rgba(255,220,170,0.75) 22%,
+      rgba(255,180,110,0.45) 42%,
+      rgba(255,140,70,0.20)  65%,
+      transparent           100%);
     border-radius: 50%;
     box-shadow:
-      0 0 22px 5px  rgba(255,255,255,0.55),
-      0 0 60px 14px rgba(180,210,255,0.30),
-      0 0 120px 30px rgba(120,160,255,0.12);
+      0 0 50px  18px rgba(255,235,200,0.55),
+      0 0 140px 40px rgba(255,180,120,0.30),
+      0 0 280px 80px rgba(255,140,80,0.16);
     transform: scale(0);
   }
-  /* 4점 별 광선 — 가로/세로 가는 빛줄기 */
+  /* 옛 4점 별 광선 — 사용 안 함 (자연스러운 글로우만 사용) */
   #introScreen .flash .ray-h,
-  #introScreen .flash .ray-v {
-    position: absolute; left: 50%; top: 50%;
-    background: linear-gradient(to right,
-      transparent 0%, transparent 35%,
-      rgba(255,255,255,0.95) 50%,
-      transparent 65%, transparent 100%);
-    transform-origin: center;
-    border-radius: 1px;
-    box-shadow: 0 0 8px rgba(220,235,255,0.6);
-  }
-  #introScreen .flash .ray-h {
-    width: 260px; height: 1.5px;
-    margin: -0.75px 0 0 -130px;
-  }
-  #introScreen .flash .ray-v {
-    width: 1.5px; height: 260px;
-    margin: -130px 0 0 -0.75px;
-    background: linear-gradient(to bottom,
-      transparent 0%, transparent 35%,
-      rgba(255,255,255,0.95) 50%,
-      transparent 65%, transparent 100%);
-  }
-  /* 발화 — 부드럽게 부풀었다 사라짐 (자연스러운 별 트윙클) */
-  #introScreen .flash.on             { animation: starGlow 1.4s ease-out forwards; }
-  #introScreen .flash.on .core       { animation: starCore 1.4s ease-out forwards; }
-  #introScreen .flash.on .ray-h      { animation: starRayH 1.4s ease-out forwards; }
-  #introScreen .flash.on .ray-v      { animation: starRayV 1.4s ease-out forwards; }
-  @keyframes starGlow {
+  #introScreen .flash .ray-v { display: none; }
+
+  /* 발화 — 빛이 천천히 부풀어 올라 화면을 밝히고 부드럽게 사그라짐 */
+  #introScreen .flash.on       { animation: sunGlow 1.6s cubic-bezier(.22,.61,.36,1) forwards; }
+  #introScreen .flash.on .core { animation: sunCore 1.6s cubic-bezier(.22,.61,.36,1) forwards; }
+  @keyframes sunGlow {
     0%   { opacity: 0; }
-    20%  { opacity: 1; }
-    70%  { opacity: 1; }
+    15%  { opacity: 1; }
+    80%  { opacity: 1; }
     100% { opacity: 0; }
   }
-  @keyframes starCore {
-    0%   { transform: scale(0); }
-    25%  { transform: scale(1.4); }
-    55%  { transform: scale(1.0); }
-    100% { transform: scale(0.7); }
-  }
-  @keyframes starRayH {
-    0%   { transform: translate(0,0) scaleX(0);   opacity: 0; }
-    25%  { transform: translate(0,0) scaleX(1.0); opacity: 1; }
-    65%  { transform: translate(0,0) scaleX(1.2); opacity: 0.7; }
-    100% { transform: translate(0,0) scaleX(1.4); opacity: 0; }
-  }
-  @keyframes starRayV {
-    0%   { transform: translate(0,0) scaleY(0);   opacity: 0; }
-    25%  { transform: translate(0,0) scaleY(1.0); opacity: 1; }
-    65%  { transform: translate(0,0) scaleY(1.2); opacity: 0.7; }
-    100% { transform: translate(0,0) scaleY(1.4); opacity: 0; }
+  @keyframes sunCore {
+    0%   { transform: scale(0);   filter: brightness(1.0); }
+    20%  { transform: scale(1.5); filter: brightness(1.4); }
+    50%  { transform: scale(3.0); filter: brightness(1.6); }
+    100% { transform: scale(6.0); filter: brightness(1.0); }
   }
 
   #introScreen .skip {
@@ -636,8 +604,8 @@
     if (!texturesReady) return;  // 로딩 안 끝났으면 핀치 무시
     if (hint) hint.textContent = '✨ ENTERING';
     flash.classList.add('on');
-    // 별 반짝임 애니메이션이 충분히 보인 후 페이드 시작 (1.1s)
-    setTimeout(endIntro, 1100);
+    // 햇빛 글로우가 충분히 부풀어오른 후 페이드 시작 (피크 즈음)
+    setTimeout(endIntro, 1300);
   };
 
   // 60초 안전망 — 카메라 거부나 인식 실패시 자동 진행 (단 로딩은 끝났어야)
