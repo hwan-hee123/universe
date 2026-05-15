@@ -274,12 +274,13 @@
   /* 옛 sprite 클래스들 — 호환을 위해 숨김 */
   #introScreen .sprite { display: none; }
 
-  /* 자연스러운 햇빛 글로우 — 이미지 중앙 sunrise spot에서 따뜻한 빛이 부드럽게
-     번지며 화면을 밝힘. sharp한 4-point 별빛이 아니라 dawn-light 톤. */
+  /* 자연스러운 햇빛 글로우 — 이미지의 sunrise spot (지평선 위 태양 빛)에서
+     빛이 부풀어 올라 점점 화면 전체를 채우는 transition. top: 40%는 이미지의
+     sunrise 위치 (16:9 가로 풀스크린 기준). */
   #introScreen .flash {
-    position: absolute; left: 50%; top: 50%;
-    width: 60px; height: 60px;
-    margin: -30px 0 0 -30px;
+    position: absolute; left: 50%; top: 40%;
+    width: 80px; height: 80px;
+    margin: -40px 0 0 -40px;
     pointer-events: none;
     opacity: 0;
   }
@@ -288,36 +289,39 @@
     position: absolute; inset: 0;
     background: radial-gradient(circle,
       rgba(255,255,255,1)     0%,
-      rgba(255,245,220,0.95)  8%,
-      rgba(255,220,170,0.75) 22%,
-      rgba(255,180,110,0.45) 42%,
-      rgba(255,140,70,0.20)  65%,
+      rgba(255,248,225,0.97)  6%,
+      rgba(255,228,180,0.85) 18%,
+      rgba(255,195,130,0.55) 36%,
+      rgba(255,150,80,0.30)  56%,
+      rgba(255,120,60,0.12)  78%,
       transparent           100%);
     border-radius: 50%;
     box-shadow:
-      0 0 50px  18px rgba(255,235,200,0.55),
-      0 0 140px 40px rgba(255,180,120,0.30),
-      0 0 280px 80px rgba(255,140,80,0.16);
+      0 0 60px   20px rgba(255,240,210,0.6),
+      0 0 180px  60px rgba(255,190,130,0.35),
+      0 0 360px 120px rgba(255,150,80,0.20),
+      0 0 600px 200px rgba(255,130,60,0.08);
     transform: scale(0);
   }
-  /* 옛 4점 별 광선 — 사용 안 함 (자연스러운 글로우만 사용) */
+  /* 옛 4점 별 광선 — 사용 안 함 */
   #introScreen .flash .ray-h,
   #introScreen .flash .ray-v { display: none; }
 
-  /* 발화 — 빛이 천천히 부풀어 올라 화면을 밝히고 부드럽게 사그라짐 */
-  #introScreen .flash.on       { animation: sunGlow 1.6s cubic-bezier(.22,.61,.36,1) forwards; }
-  #introScreen .flash.on .core { animation: sunCore 1.6s cubic-bezier(.22,.61,.36,1) forwards; }
+  /* 발화 — 작게 시작해서 점점 부풀고 화면을 환하게 밝히며 페이드 */
+  #introScreen .flash.on       { animation: sunGlow 1.8s cubic-bezier(.22,.61,.36,1) forwards; }
+  #introScreen .flash.on .core { animation: sunCore 1.8s cubic-bezier(.22,.61,.36,1) forwards; }
   @keyframes sunGlow {
     0%   { opacity: 0; }
-    15%  { opacity: 1; }
+    12%  { opacity: 1; }
     80%  { opacity: 1; }
     100% { opacity: 0; }
   }
   @keyframes sunCore {
-    0%   { transform: scale(0);   filter: brightness(1.0); }
-    20%  { transform: scale(1.5); filter: brightness(1.4); }
-    50%  { transform: scale(3.0); filter: brightness(1.6); }
-    100% { transform: scale(6.0); filter: brightness(1.0); }
+    0%   { transform: scale(0);    filter: brightness(1.0); }
+    15%  { transform: scale(1.2);  filter: brightness(1.3); }
+    40%  { transform: scale(3.0);  filter: brightness(1.55); }
+    70%  { transform: scale(7.0);  filter: brightness(1.5); }
+    100% { transform: scale(13.0); filter: brightness(1.0); }
   }
 
   #introScreen .skip {
@@ -604,8 +608,8 @@
     if (!texturesReady) return;  // 로딩 안 끝났으면 핀치 무시
     if (hint) hint.textContent = '✨ ENTERING';
     flash.classList.add('on');
-    // 햇빛 글로우가 충분히 부풀어오른 후 페이드 시작 (피크 즈음)
-    setTimeout(endIntro, 1300);
+    // 햇빛 글로우가 화면 가득 부풀어 오른 시점에 페이드 시작 (~1.5s)
+    setTimeout(endIntro, 1500);
   };
 
   // 60초 안전망 — 카메라 거부나 인식 실패시 자동 진행 (단 로딩은 끝났어야)
