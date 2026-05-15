@@ -622,14 +622,24 @@
   /* ─── 고립 모드 행성 → 정보 카드 연결선 (SVG 오버레이) ─── */
   #isolationLines {
     position: fixed; inset: 0;
-    width: 100%; height: 100%;
-    z-index: 5;
+    width: 100vw; height: 100vh;
+    z-index: 6;            /* 카드와 같은 레이어 (카드는 z 6) — 카드가 살짝 위에 그려져도 선이 행성과 카드 사이에 자연스럽게 보임 */
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.6s ease-out;
+    overflow: visible;
   }
   #isolationLines[hidden] { display: none; }
   #isolationLines.visible { opacity: 1; }
+  /* 선 스타일은 CSS 백업 — JS에서 attr로 지정한 게 안 먹는 케이스 대비 */
+  #isolationLines line {
+    stroke: rgba(255,255,255,0.75);
+    stroke-width: 1.4;
+    stroke-linecap: round;
+  }
+  #isolationLines circle {
+    fill: rgba(255,255,255,0.9);
+  }
 
   /* ─── 고립 모드 행성 이름 (HTML 평면 오버레이, 행성 위 화면 고정) ─── */
   #isolationPlanetName {
@@ -2924,28 +2934,31 @@ function hideIsolationInfo(){
 }
 
 // 행성(화면 중앙) → 정보 카드 가장 가까운 모서리로 가는 선 3개 SVG로 그리기.
-// 카드 위치는 CSS가 정하니 getBoundingClientRect로 실측 → 어떤 화면 비율에서도 정확.
 const SVG_NS = 'http://www.w3.org/2000/svg';
 function updateIsolationLines(){
   const svg = document.getElementById('isolationLines');
   const cards = document.querySelectorAll('#isolationInfo .info-card');
   if (!svg || !cards.length) return;
+  // SVG 좌표계를 화면 픽셀과 1:1로 매핑 (viewBox + width/height 명시)
+  const W = innerWidth, H = innerHeight;
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  // 기존 선 모두 제거
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-  const cx = innerWidth / 2;
-  const cy = innerHeight / 2;
-  // 고립된 행성의 화면 반경 추정 — camera FOV 75°, 거리 420, 행성 반경 70 → 화면 높이의 ~11%
-  const planetScreenRadius = innerHeight * 0.11;
+  const cx = W / 2;
+  const cy = H / 2;
+  const planetScreenRadius = H * 0.11;   // 행성 화면 반경 추정
 
   cards.forEach(card => {
     if (card.style.display === 'none') return;
     const r = card.getBoundingClientRect();
-    if (r.width === 0) return;
-    // 카드의 4 모서리 중 행성 중심에서 가장 가까운 모서리 결정
+    if (r.width === 0 || r.height === 0) return;
+    // 행성 중심에서 카드의 가장 가까운 모서리 (좌·우, 상·하)
     const tx = (r.left + r.right)  > 2 * cx ? r.left : r.right;
     const ty = (r.top  + r.bottom) > 2 * cy ? r.top  : r.bottom;
 
-    // 행성 가장자리에서 카드 모서리로
     const dx = tx - cx;
     const dy = ty - cy;
     const len = Math.hypot(dx, dy);
@@ -2958,17 +2971,12 @@ function updateIsolationLines(){
     line.setAttribute('y1', sy);
     line.setAttribute('x2', tx);
     line.setAttribute('y2', ty);
-    line.setAttribute('stroke', 'rgba(255,255,255,0.55)');
-    line.setAttribute('stroke-width', '1');
-    line.setAttribute('stroke-linecap', 'round');
     svg.appendChild(line);
 
-    // 카드 쪽 끝에 작은 점
     const dot = document.createElementNS(SVG_NS, 'circle');
     dot.setAttribute('cx', tx);
     dot.setAttribute('cy', ty);
-    dot.setAttribute('r', '2.5');
-    dot.setAttribute('fill', 'rgba(255,255,255,0.85)');
+    dot.setAttribute('r', '3');
     svg.appendChild(dot);
   });
 }
@@ -3032,15 +3040,15 @@ function enterIsolation(key){
 
   // 정보 카드 + 연결선 + 나가기 버튼 + 평면 행성 이름 표시
   showIsolationInfo(key);
-  // 카드 페이드인 시점에 맞춰 연결선도 표시 (카드 마지막 페이드 0.7s + α)
+  // 카드가 정착한 후 연결선 그림. cardIn 애니메이션의 transform(translateY)이 끝나야
+  // getBoundingClientRect가 최종 위치를 반환하므로, 마지막 카드 애니메이션(delay 0.7s + duration 0.8s = 1.5s)까지 대기.
   const linesEl = document.getElementById('isolationLines');
   if (linesEl) {
     linesEl.hidden = false;
-    // 다음 프레임에 카드 위치 측정 후 선 그리기
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       updateIsolationLines();
-      requestAnimationFrame(() => linesEl.classList.add('visible'));
-    });
+      linesEl.classList.add('visible');
+    }, 1500);
   }
   // 행성 이름 — 3D 스프라이트 라벨 대신 HTML 평면 텍스트 (화면 윗쪽 고정)
   const nameEl = document.getElementById('isolationPlanetName');
