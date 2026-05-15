@@ -619,6 +619,29 @@
   #isolationInfo .info-card.pos-bottom-left  { bottom: 14%; left:  calc(6% + 240px); animation-delay: 0.5s; }
   #isolationInfo .info-card.pos-bottom-right { bottom: 14%; right: calc(6% + 240px); animation-delay: 0.7s; }
 
+  /* ─── 고립 모드 나가기 버튼 (좌상단, 핀치로 작동) ─── */
+  #exitIsolationBtn {
+    position: fixed; top: 5%; left: 5%;
+    z-index: 15;
+    background: rgba(15,18,28,0.7);
+    color: rgba(255,255,255,0.92);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.25em;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+  }
+  #exitIsolationBtn[hidden] { display: none; }
+  #exitIsolationBtn.visible { opacity: 1; }
+  #exitIsolationBtn .arrow { margin-right: 8px; font-weight: 300; }
+
   /* ─── 별자리 활성화 버튼 (좌측, "탐험 가이드" 바로 아래에 항상 표시) ─── */
   /* PNG 오버레이의 "탐험 가이드" 버튼 좌측 정렬 + 위 약 1cm 간격 */
   #constPopup {
@@ -683,6 +706,9 @@
     <div class="value">—</div>
   </div>
 </div>
+
+<!-- ─── 고립 모드 나가기 버튼 (좌상단, 고립 모드에서만 표시) ─── -->
+<div id="exitIsolationBtn" hidden><span class="arrow">←</span>나가기</div>
 
 <!-- ─── 별자리 활성화 버튼 (좌측 "탐험 가이드" 아래에 항상 표시, 핀치로 토글) ─── -->
 <div id="constPopup">
@@ -2914,8 +2940,13 @@ function enterIsolation(key){
   followKey = null; followLocalOffset = null;
   followMoonMesh = null; followAim = null; followGalaxyGroup = null;
 
-  // 정보 카드 표시
+  // 정보 카드 + 나가기 버튼 표시
   showIsolationInfo(key);
+  const exitBtn = document.getElementById('exitIsolationBtn');
+  if (exitBtn) {
+    exitBtn.hidden = false;
+    requestAnimationFrame(() => exitBtn.classList.add('visible'));
+  }
 }
 
 function exitIsolation(){
@@ -2939,6 +2970,12 @@ function exitIsolation(){
   isolationMesh = null;
   isolationOrigScale = null;
   hideIsolationInfo();
+  // 나가기 버튼 숨김
+  const exitBtn = document.getElementById('exitIsolationBtn');
+  if (exitBtn) {
+    exitBtn.classList.remove('visible');
+    setTimeout(() => { exitBtn.hidden = true; }, 300);
+  }
 }
 
 // ── 손목 메뉴 (G 제스처 시 표시) ──
@@ -3944,15 +3981,14 @@ function processWebcamGestures(dt) {
     window.__solarOverlaySwapArmed = false;
   }
 
-  // ── 별자리 버튼(좌측 "탐험 가이드" 아래) 핀치 → 별자리 토글 ──
-  // 우상단 격자 아이콘 hot zone 제거. 버튼 한 곳만 핀치 영역.
+  // ── UI 버튼 핀치 hot zones ──
   if (rPinching && !fingerMenu.rPinchPrev) {
     const screenX = 1 - rPos.x;
     const screenY = rPos.y;
-    // 좌측 별자리 버튼 zone (top:53%, left:8.5% 근처. 여유 있게 잡음)
+
+    // 1) 좌측 별자리 버튼 zone (top:53%, left:8.5%)
     const inConstZone = (screenX >= 0.06 && screenX <= 0.20 &&
                          screenY >= 0.51 && screenY <= 0.59);
-
     if (inConstZone) {
       const cb = document.getElementById('constBtn');
       if (cb) cb.click();
@@ -3963,6 +3999,18 @@ function processWebcamGestures(dt) {
       }
       fingerMenu.rPinchPrev = rPinching;
       return;
+    }
+
+    // 2) 좌상단 "나가기" 버튼 zone — 고립 모드일 때만 활성
+    const exitBtn = document.getElementById('exitIsolationBtn');
+    if (exitBtn && !exitBtn.hidden && isolationKey) {
+      const inExitZone = (screenX >= 0.03 && screenX <= 0.16 &&
+                          screenY >= 0.03 && screenY <= 0.10);
+      if (inExitZone) {
+        exitIsolation();
+        fingerMenu.rPinchPrev = rPinching;
+        return;
+      }
     }
   }
 
