@@ -5242,7 +5242,7 @@ document.addEventListener('mousedown', e => {
 // ─── 별 발견 + 명명 시스템 ────────────────────────────
 // 무명 별 ~400개를 시드 기반으로 절차적 생성. B 비행 중 80 units 이내 진입 시 발견.
 // 발견된 별은 사용자가 이름을 지어 localStorage에 영속 저장 → 다음 방문에도 유지.
-const DISCOVERY_STAR_COUNT  = 150;          // 더욱 듬성듬성
+const DISCOVERY_STAR_COUNT  = 200;          // 듬성듬성하지만 발견 가능성 충분
 const DISCOVERY_SEED        = 0xABBA55;     // 좌표·색·크기 고정 (세션 간 동일)
 const DISCOVERY_RADIUS_NEAR = 400;          // 이 거리 이내 진입 시 발견
 const DISCOVERY_HINT_RADIUS = 4500;         // 이 거리 이내에선 깜빡임 힌트
@@ -5292,21 +5292,39 @@ function _starColorFromTemp(t) {
   );
 }
 
-// 공유 발광 텍스처 (radial gradient)
+// 공유 발광 텍스처 — 배경 별/별자리와 구분되는 뚜렷한 코어 + 좁은 후광 + 얇은 링
 let _starGlowTex = null;
 function _getStarGlowTexture() {
   if (_starGlowTex) return _starGlowTex;
-  const size = 128;
+  const size = 256;
   const c = document.createElement('canvas');
   c.width = size; c.height = size;
   const ctx = c.getContext('2d');
-  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-  grad.addColorStop(0.0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.2, 'rgba(255,255,255,0.85)');
-  grad.addColorStop(0.5, 'rgba(255,255,255,0.30)');
-  grad.addColorStop(1.0, 'rgba(255,255,255,0)');
-  ctx.fillStyle = grad;
+
+  // 1) 좁은 후광 (멀리까지 부드럽게 퍼짐)
+  const halo = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  halo.addColorStop(0.00, 'rgba(255,255,255,0.95)');
+  halo.addColorStop(0.06, 'rgba(255,255,255,0.85)');
+  halo.addColorStop(0.18, 'rgba(255,255,255,0.40)');
+  halo.addColorStop(0.45, 'rgba(255,255,255,0.10)');
+  halo.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = halo;
   ctx.fillRect(0, 0, size, size);
+
+  // 2) 뚜렷한 코어 (작고 강한 점) — "확실히 거기 있다"는 느낌
+  const core = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size * 0.08);
+  core.addColorStop(0.00, 'rgba(255,255,255,1)');
+  core.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, size, size);
+
+  // 3) 얇은 외곽 링 (배경 별과의 구분 — "발견 가능한 별" 마크)
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(size/2, size/2, size * 0.32, 0, Math.PI * 2);
+  ctx.stroke();
+
   _starGlowTex = new THREE.CanvasTexture(c);
   return _starGlowTex;
 }
@@ -5335,7 +5353,7 @@ function initDiscoverableStars() {
       blending: THREE.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      opacity: 0.45,
+      opacity: 0.70,        // 배경 별/별자리 위로 확실히 떠 보이게
     });
     const sprite = new THREE.Sprite(mat);
     sprite.position.set(x, y, z);
@@ -5409,12 +5427,12 @@ function tickStarDiscovery(timeSec, dt) {
     if (d < DISCOVERY_HINT_RADIUS) {
       const proximity = 1 - d / DISCOVERY_HINT_RADIUS;     // 0~1
       const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.5 + s.pulsePhase);
-      const op   = 0.35 + proximity * 0.4 + pulse * proximity * 0.4;
+      const op   = 0.65 + proximity * 0.35 + pulse * proximity * 0.5;
       s.sprite.material.opacity = Math.min(op, 1.0);
-      const sz = s.baseSize * (1 + proximity * 0.6 * (0.6 + pulse * 0.5));
+      const sz = s.baseSize * (1 + proximity * 0.7 * (0.6 + pulse * 0.5));
       s.sprite.scale.setScalar(sz);
     } else {
-      s.sprite.material.opacity = 0.35;
+      s.sprite.material.opacity = 0.70;     // 멀리 있어도 배경과 구분되게
       s.sprite.scale.setScalar(s.baseSize);
     }
   }
