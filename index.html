@@ -452,7 +452,7 @@
 <!-- 같은 원본 이미지를 부위별로 클립해서 여러 레이어로 깔고, -->
 <!-- 손 레이어만 양쪽 밖에서 안으로 슬라이드 → 검지가 만나면 -->
 <!-- 가운데 동심원이 페이드인 → 화이트 플래시 → 우주 씬. -->
-<div id="introScreen" aria-label="ABYSS intro">
+<div id="introScreen" hidden aria-label="ABYSS intro">
   <div class="stars"></div>
   <div class="scene">
     <!-- 영상 한 번 자동재생 후 마지막 프레임에서 정지. 로딩 중엔 검은 배경. -->
@@ -479,7 +479,7 @@
 <!-- ─── 캘리브레이션 / 시스템 체크 화면 ──────────── -->
 <!-- 인트로 종료 후 자동으로 표시. HEAD MOUNT는 시뮬레이션, -->
 <!-- HAPTIC GLOVES는 MediaPipe 손 트래킹으로 실제 감지. -->
-<div id="calibScreen" hidden aria-label="System calibration">
+<div id="calibScreen" aria-label="System calibration">
   <!-- 배경 HUD 이미지 (정적, 라이브 와이어프레임은 그 위에 깔림) -->
   <!-- 이미지에 ABYSS 타이틀이 포함돼 있어 별도 로고는 사용 안 함 -->
   <div class="calib-bg"></div>
@@ -568,23 +568,25 @@
 <!-- ─── 인트로 화면 라이프사이클 ──────────────────── -->
 <script>
 (function(){
+  // ── 화면 순서: 페이지 로드 시 캘리브레이션이 먼저 → 손/머리 인식 + 주먹폄 제스처 →
+  //              인트로(ABYSS 영상) → 핀치 → 우주씬 ──
   const intro = document.getElementById('introScreen');
-  if (!intro) return;
+  const calib = document.getElementById('calibScreen');
+  if (!intro || !calib) return;
   const flash    = document.getElementById('introFlash');
   const hint     = intro.querySelector('.pinch-hint');
-  const loadBar  = document.getElementById('introLoadingBar');
   const loadFill = document.getElementById('introLoadingFill');
   const loadText = document.getElementById('introLoadingText');
   const video    = document.getElementById('introVideo');
 
-  let done = false;
+  let introDone     = false;
+  let introStarted  = false;
   let texturesReady = false;
 
   // 영상이 끝나면 마지막 프레임에서 정지 (일부 브라우저에서 자동 리셋 방지)
   if (video) {
     video.addEventListener('ended', () => {
       try {
-        // duration 직전으로 currentTime 고정 → poster나 검은 화면으로 돌아가지 않음
         if (Number.isFinite(video.duration)) {
           video.currentTime = Math.max(0, video.duration - 0.02);
         }
@@ -593,9 +595,10 @@
     });
   }
 
-  // ── 텍스처 로딩 콜백 (메인 스크립트의 LoadingManager가 호출) ──
+  // ── 텍스처 로딩 콜백 (메인 LoadingManager가 호출) ──
+  // 페이지 로드 직후부터 활성. intro가 보이는 동안 진행/완료가 UI로 반영됨.
   window.__abyssLoadProgress = (loaded, total) => {
-    if (texturesReady || done) return;
+    if (texturesReady || introDone) return;
     const t = Math.max(total, 1);
     const pct = Math.min(99, Math.round((loaded / t) * 100));
     if (loadFill) loadFill.style.width = pct + '%';
@@ -606,70 +609,25 @@
     texturesReady = true;
     if (loadFill) loadFill.style.width = '100%';
     if (loadText) loadText.textContent = 'READY';
+    // intro가 이미 떠 있으면 바로 .ready 클래스 부여
     setTimeout(() => {
-      if (done) return;
-      intro.classList.add('ready');      // pinch-hint 표시 + loading-bar 숨김
+      if (introDone) return;
+      if (introStarted) intro.classList.add('ready');
     }, 400);
   };
-  // 텍스처가 이미 로드된 경우(빠른 캐시 hit) 대비 — 메인이 이 플래그를 설정함
   if (window.__abyssTexturesAlreadyLoaded) window.__abyssLoadComplete();
 
-  // 1.6초 후 카메라 자동 시작 — 인트로 페이드인이 끝나는 시점쯤에 권한 요청
-  setTimeout(() => {
-    if (done) return;
-    const handBtn = document.getElementById('handBtn');
-    if (handBtn && !window.__mpRunning) {
-      try { handBtn.click(); } catch(e) {}
-    }
-  }, 1600);
-
-  // 메인 스크립트가 핀치 감지하면 호출 (1회성). 로딩 끝나기 전엔 무시.
-  window.__abyssPinchFired = () => {
-    if (done) return;
-    if (!texturesReady) return;  // 로딩 안 끝났으면 핀치 무시
-    if (hint) hint.textContent = '✨ ENTERING';
-    flash.classList.add('on');
-    // 햇빛 글로우가 화면 가득 부풀어 오른 시점에 페이드 시작 (~1.5s)
-    setTimeout(endIntro, 1500);
-  };
-
-  // 60초 안전망 — 카메라 거부나 인식 실패시 자동 진행 (단 로딩은 끝났어야)
-  setTimeout(() => { if (!done && texturesReady) endIntro(); }, 60000);
-
-  function endIntro(){
-    if (done) return;
-    if (!texturesReady) return;   // 로딩 끝나기 전엔 진행 안 함
-    done = true;
-    window.__abyssPinchFired = null;
-    // 캘리브 화면을 인트로 페이드 시작 직전에 보여줌. calib의 검은 배경이
-    // intro 뒤에 깔려서, intro가 투명해지는 동안 우주씬이 비치지 않음
-    startCalibration();
-    intro.classList.add('fading');
-    setTimeout(() => {
-      intro.remove();
-    }, 1400);
-  }
-
-  // 클릭/키보드로 스킵 (시연 중 안전망) — 단 로딩 완료 후에만 동작
-  intro.addEventListener('click', endIntro);
-  window.addEventListener('keydown', (e) => {
-    if (!done && texturesReady && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) endIntro();
-  }, { once: false });
-
-  /* ─── 캘리브레이션 화면 ──────────────────────────── */
+  /* ─── 캘리브레이션 (페이지 로드 시 가장 먼저 보임) ─── */
   function startCalibration(){
-    const calib   = document.getElementById('calibScreen');
-    if (!calib) return;
     const headVal  = document.getElementById('calibHeadVal');
     const handVal  = document.getElementById('calibHandVal');
     const finalVal = document.getElementById('calibFinalVal');
     const skipEl   = document.getElementById('calibSkip');
-    calib.hidden = false;
 
-    // 머리 와이어프레임은 이 화면에서만 보임. 메인 스크립트가 플래그 체크.
+    // 머리 와이어프레임은 이 화면에서만 보임
     window.__showCalibHead = true;
 
-    // MediaPipe 와이어프레임 캔버스가 캘리브레이션 위로 보이게 z-index 끌어올림
+    // MediaPipe 와이어프레임 캔버스를 calib 위로 끌어올림
     const bumpWireZ = () => {
       const wc = document.getElementById('mpWireCanvas');
       if (wc) { wc.style.zIndex = '9999'; wc.style.pointerEvents = 'none'; }
@@ -681,7 +639,7 @@
     let handsDetected = false;
     let faceDetected = false;
 
-    // 1.2초 후 MediaPipe 자동 시작 (이미 켜져 있으면 패스)
+    // 1.2초 후 MediaPipe 자동 시작 (카메라 권한 요청)
     setTimeout(() => {
       if (calibDone) return;
       const handBtn = document.getElementById('handBtn');
@@ -691,21 +649,17 @@
       }
     }, 1200);
 
-    // 손 첫 검출 시 상태 갱신 (자동 진행은 안 함)
     window.__abyssHandSeen = () => {
       if (handsDetected) return;
       handsDetected = true;
-      handVal.classList.remove('scan');
-      handVal.classList.add('ok');
+      handVal.classList.remove('scan'); handVal.classList.add('ok');
       handVal.textContent = 'CONNECTED';
       updateSkipHint();
     };
-    // 얼굴 첫 검출 시 상태 갱신
     window.__abyssFaceSeen = () => {
       if (faceDetected) return;
       faceDetected = true;
-      headVal.classList.remove('scan');
-      headVal.classList.add('ok');
+      headVal.classList.remove('scan'); headVal.classList.add('ok');
       headVal.textContent = 'ACTIVE';
       updateSkipHint();
     };
@@ -714,40 +668,39 @@
       if (handsDetected && faceDetected) {
         skipEl.textContent = '✊ make fists then open both hands · or click to skip';
       } else if (handsDetected) {
-        skipEl.textContent = 'looking for face · ✊ then open hands to enter';
+        skipEl.textContent = 'looking for face · ✊ then open hands to continue';
       } else if (faceDetected) {
-        skipEl.textContent = 'show hands to camera · ✊ then open to enter';
+        skipEl.textContent = 'show hands to camera · ✊ then open to continue';
       }
     }
 
-    // 양손 주먹 → 폄 제스처 단계 표시
     window.__abyssFistArmed = () => {
       if (calibDone || !handsDetected) return;
       finalVal.classList.remove('muted');
       finalVal.classList.add('scan');
-      finalVal.textContent = '✊ FISTS LOCKED · OPEN PALMS TO LAUNCH';
+      finalVal.textContent = '✊ FISTS LOCKED · OPEN PALMS TO CONTINUE';
     };
     window.__abyssFistOpenFired = () => {
       if (calibDone) return;
       finalVal.classList.remove('scan', 'muted');
       finalVal.classList.add('ok');
-      finalVal.textContent = '◆ LAUNCHING ◆';
-      skipEl.textContent = 'entering universe...';
+      finalVal.textContent = '◆ CONTINUING ◆';
+      skipEl.textContent = '';
       setTimeout(endCalibration, 1100);
     };
 
-    // 30초 안전망 타임아웃 — 카메라 거부나 제스처 못 잡을 때 자동 진행
+    // 30초 안전망 — 제스처/카메라 실패시 자동 진행
     setTimeout(() => {
       if (calibDone) return;
       finalVal.classList.remove('muted', 'scan');
-      finalVal.textContent = '◆ ENTERING UNIVERSE ◆';
+      finalVal.textContent = '◆ CONTINUING ◆';
       setTimeout(endCalibration, 900);
     }, 30000);
 
     function endCalibration(){
       if (calibDone) return;
       calibDone = true;
-      window.__showCalibHead = false;          // 머리 와이어프레임 영구 숨김
+      window.__showCalibHead = false;
       window.__abyssHandSeen = null;
       window.__abyssFaceSeen = null;
       window.__abyssFistArmed = null;
@@ -755,11 +708,12 @@
       clearInterval(wireBumpInterval);
       const wc = document.getElementById('mpWireCanvas');
       if (wc) wc.style.zIndex = '';
+      // intro 표시 (intro가 z-index 9999로 calib 위에 깔림) → 자연스러운 크로스페이드
+      startIntro();
       calib.classList.add('fading');
       setTimeout(() => calib.remove(), 1300);
     }
 
-    // 클릭/키보드 스킵
     calib.addEventListener('click', endCalibration);
     window.addEventListener('keydown', function onKey(e){
       if (!calibDone && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
@@ -768,6 +722,51 @@
       }
     });
   }
+
+  /* ─── 인트로 (캘리브 이후 → ABYSS 영상 + 핀치) ─── */
+  function startIntro(){
+    if (introStarted) return;
+    introStarted = true;
+    intro.hidden = false;
+
+    // 텍스처 로딩이 이미 끝났으면 바로 ready 상태로
+    if (texturesReady) {
+      setTimeout(() => { if (!introDone) intro.classList.add('ready'); }, 400);
+    }
+
+    // 메인 스크립트가 핀치 감지하면 호출 (1회성). 로딩 끝나기 전엔 무시.
+    window.__abyssPinchFired = () => {
+      if (introDone) return;
+      if (!texturesReady) return;
+      if (hint) hint.textContent = '✨ ENTERING';
+      flash.classList.add('on');
+      setTimeout(endIntro, 1500);
+    };
+
+    // 60초 안전망
+    setTimeout(() => { if (!introDone && texturesReady) endIntro(); }, 60000);
+
+    // 클릭/키보드 스킵 (로딩 완료 후만)
+    intro.addEventListener('click', endIntro);
+    window.addEventListener('keydown', function onIntroKey(e) {
+      if (!introDone && texturesReady && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
+        endIntro();
+        window.removeEventListener('keydown', onIntroKey);
+      }
+    });
+  }
+
+  function endIntro(){
+    if (introDone) return;
+    if (!texturesReady) return;
+    introDone = true;
+    window.__abyssPinchFired = null;
+    intro.classList.add('fading');
+    setTimeout(() => intro.remove(), 1400);
+  }
+
+  // ── 페이지 로드 → 캘리브레이션부터 시작 ──
+  startCalibration();
 })();
 </script>
 
