@@ -566,40 +566,42 @@
     animation: skipBlink 2.4s ease-in-out infinite;
   }
 
-  /* ─── 우상단 격자 아이콘 핀치 → 별자리 활성화 팝업 ─── */
+  /* ─── 별자리 활성화 버튼 (좌측, "탐험 가이드" 바로 아래에 항상 표시) ─── */
+  /* PNG 오버레이의 "탐험 가이드" 버튼 바로 아래 위치. 핀치로 토글. */
   #constPopup {
-    position: fixed; top: 14%; right: 2%;
+    position: fixed; top: 60%; left: 5.5%;
     z-index: 15;
-    background: rgba(15,18,28,0.85);
-    color: #fff;
-    border: 1px solid rgba(180,210,255,0.4);
+    background: rgba(15,18,28,0.6);
+    color: rgba(255,255,255,0.85);
+    border: 1px solid rgba(255,255,255,0.18);
     border-radius: 999px;
-    padding: 10px 22px;
+    padding: 8px 18px;
     font-family: 'Orbitron', sans-serif;
-    font-size: 12px;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.5), 0 0 18px rgba(180,210,255,0.15);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     pointer-events: none;
-    opacity: 1;
-    transition: opacity 0.25s ease-out;
+    transition: background 0.25s ease-out, border-color 0.25s ease-out;
   }
   #constPopup[hidden] { display: none; }
   #constPopup.active {
-    background: rgba(91,141,245,0.85);
+    background: rgba(91,141,245,0.75);
     border-color: rgba(180,210,255,0.7);
+    color: #fff;
   }
   #constPopup .dot {
-    display: inline-block; width: 8px; height: 8px;
+    display: inline-block; width: 7px; height: 7px;
     border-radius: 50%;
-    background: #ffd97a;
+    background: rgba(255,255,255,0.55);
     margin-right: 8px;
     vertical-align: middle;
-    box-shadow: 0 0 8px rgba(255,217,122,0.7);
   }
-  #constPopup.active .dot { background: #6cffa9; box-shadow: 0 0 8px rgba(108,255,169,0.8); }
+  #constPopup.active .dot {
+    background: #6cffa9;
+    box-shadow: 0 0 8px rgba(108,255,169,0.8);
+  }
 </style>
 </head>
 <body>
@@ -610,8 +612,8 @@
 <!-- ─── 우주씬 UI 오버레이 (Three.js 캔버스 위에 PNG로 덮음) ─── -->
 <img id="solarSystemOverlay" src="assets/solar_system.png" alt="">
 
-<!-- ─── 별자리 활성화 팝업 (우상단 격자 아이콘 핀치하면 등장) ─── -->
-<div id="constPopup" hidden>
+<!-- ─── 별자리 활성화 버튼 (좌측 "탐험 가이드" 아래에 항상 표시, 핀치로 토글) ─── -->
+<div id="constPopup">
   <span class="dot"></span>별자리
 </div>
 
@@ -3586,32 +3588,23 @@ function processWebcamGestures(dt) {
     fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
   }
 
-  // ── 우상단 격자 아이콘 핀치 → 별자리 팝업 토글, 팝업 핀치 → 별자리 활성화 ──
-  // PNG 디자인에 맞춘 화면 영역(정규화 0~1 screen coords, mirror 후 기준).
+  // ── 별자리 버튼(좌측 "탐험 가이드" 아래) 핀치 → 별자리 토글 ──
+  // 우상단 격자 아이콘 hot zone 제거. 버튼 한 곳만 핀치 영역.
   if (rPinching && !fingerMenu.rPinchPrev) {
-    const screenX = 1 - rPos.x;    // 디스플레이는 mirror돼 있음
+    const screenX = 1 - rPos.x;
     const screenY = rPos.y;
-    // 격자 아이콘 hot zone (우상단, 화면 폭의 우측 8%, 상단 13%)
-    const inIconZone = (screenX >= 0.91 && screenX <= 1.00 &&
-                        screenY >= 0.01 && screenY <= 0.13);
-    // 팝업 zone (격자 바로 아래)
-    const popupEl = document.getElementById('constPopup');
-    const popupVisible = popupEl && !popupEl.hidden;
-    const inPopupZone = (screenX >= 0.83 && screenX <= 1.00 &&
-                         screenY >= 0.13 && screenY <= 0.23);
+    // 좌측 별자리 버튼 zone (top:60%, left:5.5% 근처. 여유 있게 잡음)
+    const inConstZone = (screenX >= 0.03 && screenX <= 0.16 &&
+                         screenY >= 0.58 && screenY <= 0.66);
 
-    if (inIconZone) {
-      // 격자 핀치 → 팝업 토글
-      if (popupEl) popupEl.hidden = !popupEl.hidden;
-      fingerMenu.rPinchPrev = rPinching;
-      return;
-    } else if (popupVisible && inPopupZone) {
-      // 팝업 핀치 → 별자리 토글 (constBtn click 호출)
+    if (inConstZone) {
       const cb = document.getElementById('constBtn');
       if (cb) cb.click();
-      // 팝업 외형도 active 상태 반영
-      const active = cb && cb.classList.contains('active');
-      popupEl.classList.toggle('active', active);
+      const popupEl = document.getElementById('constPopup');
+      if (popupEl) {
+        const active = cb && cb.classList.contains('active');
+        popupEl.classList.toggle('active', active);
+      }
       fingerMenu.rPinchPrev = rPinching;
       return;
     }
