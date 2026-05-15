@@ -1318,10 +1318,64 @@ function makeStars(count, radius, size, color) {
 const skyboxGroup = new THREE.Group();
 scene.add(skyboxGroup);
 
-skyboxGroup.add(makeStars(8000, 5000, 2.5, 0xffffff));
-skyboxGroup.add(makeStars(3000, 4500, 4.0, 0xaaccff));
-skyboxGroup.add(makeStars(1500, 4000, 5.5, 0xffd9a8));
-skyboxGroup.add(makeStars(800,  3500, 7.0, 0xff9b6b));
+// 별 밀도 대폭 증가 + 색 다양화 (백색·블루·골드·레드·핑크·그린)
+skyboxGroup.add(makeStars(20000, 5000, 2.0, 0xffffff));  // 작은 백색 별 (배경)
+skyboxGroup.add(makeStars( 8000, 4700, 2.6, 0xaaccff));  // 푸른 별
+skyboxGroup.add(makeStars( 4000, 4400, 3.5, 0xffd9a8));  // 골든 별
+skyboxGroup.add(makeStars( 2500, 4000, 5.0, 0xff9b6b));  // 적등 별 (크게)
+skyboxGroup.add(makeStars( 2200, 4200, 3.2, 0xffaaff));  // 핑크 별
+skyboxGroup.add(makeStars( 1500, 4800, 3.0, 0xaaffcc));  // 시안 별
+skyboxGroup.add(makeStars(  600, 3600, 7.5, 0xffe0a0));  // 큰 강조 별 몇 개
+
+// ─── 절차적 nebula 구름 — 배경에 컬러풀한 우주 안개 산재 ───
+// 한 장의 radial-gradient 캔버스 텍스처를 sprite로 색 tint해서 반복 사용 (메모리 효율)
+{
+  const nbCanvas = document.createElement('canvas');
+  nbCanvas.width = nbCanvas.height = 256;
+  const nctx = nbCanvas.getContext('2d');
+  const ng = nctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  ng.addColorStop(0.00, 'rgba(255,255,255,1)');
+  ng.addColorStop(0.20, 'rgba(255,255,255,0.55)');
+  ng.addColorStop(0.50, 'rgba(255,255,255,0.18)');
+  ng.addColorStop(1.00, 'rgba(255,255,255,0)');
+  nctx.fillStyle = ng;
+  nctx.fillRect(0, 0, 256, 256);
+  const nebulaTex = new THREE.CanvasTexture(nbCanvas);
+
+  // Hubble 풍 다양한 색 — 자주·핑크·골드·시안·블루·오렌지
+  const NEBULA_COLORS = [
+    0xff5599, 0xcc66ff, 0x9966ff, 0x6688ff,
+    0xff8855, 0xffcc66, 0x66ddff, 0xaa66ff,
+    0xff7777, 0xffaa44,
+  ];
+  const NEBULA_COUNT = 55;
+  for (let i = 0; i < NEBULA_COUNT; i++) {
+    // 구체 표면에 균등 분포 (위·아래 편중 방지)
+    const u = Math.random();
+    const v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const phi   = Math.acos(2 * v - 1);
+    const dist  = 3800 + Math.random() * 1400;  // 배경 영역, 별 거리와 비슷
+    const x = dist * Math.sin(phi) * Math.cos(theta);
+    const y = dist * Math.sin(phi) * Math.sin(theta);
+    const z = dist * Math.cos(phi);
+
+    const color   = NEBULA_COLORS[Math.floor(Math.random() * NEBULA_COLORS.length)];
+    const size    = 900 + Math.random() * 1500;       // 크기 다양
+    const opacity = 0.10 + Math.random() * 0.18;      // 흐릿함 ~ 약간 진함
+
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: nebulaTex,
+      color: color,
+      transparent: true, opacity: opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }));
+    sprite.scale.set(size, size, 1);
+    sprite.position.set(x, y, z);
+    skyboxGroup.add(sprite);
+  }
+}
 
 // ─── 라벨 ─────────────────────────────────────────────
 // 모든 라벨을 모아 매 프레임 스케일 업데이트 (카메라 거리에 비례 → 화면 크기 일정)
