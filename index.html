@@ -281,6 +281,27 @@
   /* 옛 flash 효과 강제 무력화 — 캐시에 잔존해도 동작 안 함 */
   #introScreen .flash, #galaxyScreen .flash { display: none !important; }
 
+  /* ─── 태양계 전환 영상 화면 (은하 위에 깔림) ─── */
+  #solarSystemScreen {
+    position: fixed; inset: 0; z-index: 10001;
+    background: #000;
+    overflow: hidden;
+    transition: opacity 1.2s ease-out;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  #solarSystemScreen[hidden] { display: none; }
+  #solarSystemScreen.fading { opacity: 0; pointer-events: none; }
+  #solarSystemScreen .full-video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    object-position: center;
+    background: #000;
+    opacity: 0;
+    animation: introFadeIn 1.0s 0.1s ease-out forwards;
+  }
+
   /* ─── 은하 회전 영상 화면 ─── */
   #galaxyScreen {
     position: fixed; inset: 0; z-index: 10000;
@@ -553,7 +574,17 @@
   <div class="pinch-hint">✋ pinch thumb &amp; index to continue</div>
 </div>
 
-<!-- ─── 은하 회전 영상 화면 (인트로 → 우주씬 사이) ──────── -->
+<!-- ─── 태양계 전환 영상 화면 (은하 → 우주씬 사이) ──────── -->
+<!-- 영상이 한 번 재생되고 끝나면 자동으로 우주씬으로 페이드 -->
+<div id="solarSystemScreen" hidden aria-label="Solar system transition">
+  <video class="full-video" id="solarSystemVideo"
+         muted playsinline preload="auto">
+    <source src="assets/solar_system.mp4" type="video/mp4">
+    <source src="assets/solar_system.webm" type="video/webm">
+  </video>
+</div>
+
+<!-- ─── 은하 회전 영상 화면 (인트로 → 은하 → 우주씬) ──────── -->
 <div id="galaxyScreen" hidden aria-label="Galaxy entry">
   <video class="full-video" id="galaxyVideo"
          loop muted playsinline preload="auto">
@@ -673,11 +704,15 @@
   const galaxyVideo = document.getElementById('galaxyVideo');
   const galaxyFlash = document.getElementById('galaxyFlash');
   const galaxyHint  = galaxy.querySelector('.pinch-hint');
+  const solarSystem      = document.getElementById('solarSystemScreen');
+  const solarSystemVideo = document.getElementById('solarSystemVideo');
 
   let introDone     = false;
   let introStarted  = false;
   let galaxyStarted = false;
   let galaxyDone    = false;
+  let solarStarted  = false;
+  let solarDone     = false;
   let texturesReady = false;
 
   // 영상이 끝나면 마지막 프레임에서 정지 (일부 브라우저에서 자동 리셋 방지)
@@ -879,11 +914,40 @@
   }
 
   function endGalaxy(){
-    if (galaxyDone) return;       // 중복 호출 방지 (click + pinch 동시에 들어와도 한 번만)
+    if (galaxyDone) return;       // 중복 호출 방지
     galaxyDone = true;
     window.__abyssPinchFired = null;
+    // 태양계 전환 영상을 먼저 띄우고 (z 10001로 은하 위에 깔림) 은하 페이드
+    startSolarSystem();
     galaxy.classList.add('fading');
     setTimeout(() => galaxy.remove(), 1400);
+  }
+
+  /* ─── 태양계 전환 영상 (은하 → 우주씬 사이, 영상 끝나면 자동 진행) ─── */
+  function startSolarSystem(){
+    if (solarStarted || !solarSystem) return;
+    solarStarted = true;
+    solarSystem.hidden = false;
+
+    if (solarSystemVideo) {
+      try {
+        solarSystemVideo.currentTime = 0;
+        const p = solarSystemVideo.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) {}
+      // 영상 끝나면 자동으로 우주씬으로 페이드
+      solarSystemVideo.addEventListener('ended', endSolarSystem, { once: true });
+    } else {
+      // 영상 요소가 없으면 즉시 종료
+      setTimeout(endSolarSystem, 100);
+    }
+  }
+
+  function endSolarSystem(){
+    if (solarDone || !solarSystem) return;
+    solarDone = true;
+    solarSystem.classList.add('fading');
+    setTimeout(() => solarSystem.remove(), 1400);
   }
 
   // ── 페이지 로드 → 캘리브레이션부터 시작 ──
