@@ -158,15 +158,21 @@
     background: rgba(52, 168, 83, 0.7);
     width: 20px; height: 20px;
   }
+  /* 손 제스처 안내 이미지 — 우측 하단 모드 표시("모드: ...") 바로 위에 배치 */
   #mpWristMenu {
-    position: fixed; bottom: 180px; right: 12px; z-index: 60;
-    width: 220px;
-    background: rgba(15,18,28,0.95); color: #fff;
-    border: 1px solid #34a853; border-radius: 8px;
-    padding: 10px 12px; font-size: 12px;
+    position: fixed; bottom: 60px; right: 12px; z-index: 60;
+    width: 280px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    pointer-events: none;       /* 시야 가리지 않게 클릭/핀치 통과 */
   }
   #mpWristMenu[hidden] { display: none; }
-  #mpWristMenu .row { padding: 4px 0; }
+  #mpWristMenu img {
+    width: 100%; height: auto;
+    display: block;
+    filter: drop-shadow(0 4px 14px rgba(0,0,0,0.6));
+  }
 
   /* ───────────────────────────────────────────────
      ABYSS 인트로 화면
@@ -992,12 +998,7 @@
 </div>
 <div id="handCursor" hidden></div>
 <div id="mpWristMenu" hidden>
-  <div class="row"><b>🤚 손 제스처 사용법</b></div>
-  <div class="row" style="color:#999;font-size:11px">왼손 손가락 끝 꼬집어 모드 선택</div>
-  <div class="row"><span style="color:#ff6688">●</span> 엄지 끝 → <b>A 선택</b></div>
-  <div class="row"><span style="color:#66aaff">●</span> 검지 끝 → <b>D 둘러보기</b> (↔↕)</div>
-  <div class="row"><span style="color:#88ff88">●</span> 중지 끝 → <b>B 비행</b> (✊↑전진 ↓후진 ↔스트레이프)</div>
-  <div class="row" style="color:#999;font-size:11px;margin-top:6px">그 후 오른손 핀치로 액션 실행</div>
+  <img src="assets/gesture.png" alt="손 제스처 가이드" />
 </div>
 
 <div id="settingsPanel" hidden>
