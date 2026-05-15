@@ -581,7 +581,7 @@
     <div class="row">HEAD MOUNT &nbsp;·&nbsp; <span class="val scan" id="calibHeadVal">SCANNING</span></div>
     <div class="row" id="calibFinalRow"><span class="val muted" id="calibFinalVal">CLENCH FISTS · OPEN PALMS · TO ENTER</span></div>
   </div>
-  <div class="calib-skip" id="calibSkip">show hands &amp; face to camera · or click to skip</div>
+  <div class="calib-skip" id="calibSkip">show hands &amp; face to camera</div>
 </div>
 
 <div id="info">
@@ -761,7 +761,7 @@
 
     function updateSkipHint(){
       if (handsDetected && faceDetected) {
-        skipEl.textContent = '✊ make fists then open both hands · or click to skip';
+        skipEl.textContent = '✊ make fists then open both hands to continue';
       } else if (handsDetected) {
         skipEl.textContent = 'looking for face · ✊ then open hands to continue';
       } else if (faceDetected) {
@@ -784,13 +784,7 @@
       setTimeout(endCalibration, 1100);
     };
 
-    // 30초 안전망 — 제스처/카메라 실패시 자동 진행
-    setTimeout(() => {
-      if (calibDone) return;
-      finalVal.classList.remove('muted', 'scan');
-      finalVal.textContent = '◆ CONTINUING ◆';
-      setTimeout(endCalibration, 900);
-    }, 30000);
+    // 자동 진행 안전망 제거 — 사용자가 양손 주먹→폄 제스처를 수행해야만 진행됨
 
     function endCalibration(){
       if (calibDone) return;
@@ -809,13 +803,7 @@
       setTimeout(() => calib.remove(), 1300);
     }
 
-    calib.addEventListener('click', endCalibration);
-    window.addEventListener('keydown', function onKey(e){
-      if (!calibDone && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
-        endCalibration();
-        window.removeEventListener('keydown', onKey);
-      }
-    });
+    // 클릭/키보드 스킵 제거 — 양손 주먹 → 폄 제스처만 진행 가능
   }
 
   /* ─── 인트로 (캘리브 이후 → ABYSS 영상 + 핀치) ─── */
@@ -847,17 +835,7 @@
       setTimeout(endIntro, 1500);
     };
 
-    // 60초 안전망
-    setTimeout(() => { if (!introDone && texturesReady) endIntro(); }, 60000);
-
-    // 클릭/키보드 스킵 (로딩 완료 후만)
-    intro.addEventListener('click', endIntro);
-    window.addEventListener('keydown', function onIntroKey(e) {
-      if (!introDone && texturesReady && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
-        endIntro();
-        window.removeEventListener('keydown', onIntroKey);
-      }
-    });
+    // 자동 진행 / 클릭 / 키보드 스킵 모두 제거 — 핀치 제스처(엄지+검지)만 진행 가능
   }
 
   function endIntro(){
@@ -895,17 +873,7 @@
       setTimeout(endGalaxy, 1500);       // 빛 효과 보여준 뒤 페이드
     };
 
-    // 60초 안전망 — 핀치 못 받으면 자동 진행
-    setTimeout(() => { if (!galaxyDone) endGalaxy(); }, 60000);
-
-    // 클릭/키보드 스킵
-    galaxy.addEventListener('click', endGalaxy);
-    window.addEventListener('keydown', function onGalaxyKey(e) {
-      if (!galaxyDone && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
-        endGalaxy();
-        window.removeEventListener('keydown', onGalaxyKey);
-      }
-    });
+    // 자동 진행 / 클릭 / 키보드 스킵 모두 제거 — 핀치 제스처(엄지+검지)만 진행 가능
   }
 
   function endGalaxy(){
