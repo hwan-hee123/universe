@@ -1099,6 +1099,9 @@
     solarDone = true;
     solarSystem.classList.add('fading');
     setTimeout(() => solarSystem.remove(), 1400);
+    // 우주씬 진입 1.5초 후 — solar_system 오버레이 PNG를 한 번 핀치로 swap 가능하게 활성화
+    // (전환 직후 잔여 핀치가 트리거되지 않도록 딜레이)
+    setTimeout(() => { window.__solarOverlaySwapArmed = true; }, 1500);
   }
 
   // ── 페이지 로드 → 캘리브레이션부터 시작 ──
@@ -3839,6 +3842,13 @@ function processWebcamGestures(dt) {
     fingerMenu.mode = onFinger;
     setStatus(`🤚 모드 변경: ${modeLabel(onFinger)}`);
     fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
+  }
+
+  // ── 우주씬 진입 후 첫 핀치 → solar_system 오버레이를 solar_system 1.png 로 swap (1회) ──
+  if (window.__solarOverlaySwapArmed && rPinching && !fingerMenu.rPinchPrev) {
+    const img = document.getElementById('solarSystemOverlay');
+    if (img) img.src = 'assets/solar_system%201.png';
+    window.__solarOverlaySwapArmed = false;
   }
 
   // ── 별자리 버튼(좌측 "탐험 가이드" 아래) 핀치 → 별자리 토글 ──
