@@ -312,7 +312,12 @@
     object-position: center;
     background: #000;
     opacity: 0;
-    animation: introFadeIn 1.0s 0.1s ease-out forwards;
+    /* zoom-in 효과 제거 — 단순 opacity fade만 (은하에서 매끄럽게 이어짐) */
+    animation: solarFadeIn 1.4s ease-out forwards;
+  }
+  @keyframes solarFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
 
   /* ─── 은하 회전 영상 화면 ─── */
@@ -320,7 +325,8 @@
     position: fixed; inset: 0; z-index: 10000;
     background: #000;
     overflow: hidden;
-    transition: opacity 1.2s ease-out;
+    /* 솔라 시스템 영상 페이드인(1.4s)과 맞춰 더 길게 — 자연스러운 크로스페이드 */
+    transition: opacity 1.4s ease-out;
     cursor: pointer;
     font-family: 'Orbitron', system-ui, sans-serif;
     display: flex; flex-direction: column;
@@ -1055,13 +1061,33 @@
   }
 
   function endGalaxy(){
-    if (galaxyDone) return;       // 중복 호출 방지
+    if (galaxyDone) return;
     galaxyDone = true;
     window.__abyssPinchFired = null;
-    // 태양계 전환 영상을 먼저 띄우고 (z 10001로 은하 위에 깔림) 은하 페이드
+
+    // 1) 은하 영상 일시정지 — 페이드 중 두 영상이 동시에 움직이지 않게 마지막 프레임 고정
+    if (galaxyVideo && !galaxyVideo.paused) {
+      try { galaxyVideo.pause(); } catch (e) {}
+    }
+
+    // 2) 태양계 전환 영상 시작 (z 10001로 은하 위에 깔림)
     startSolarSystem();
-    galaxy.classList.add('fading');
-    setTimeout(() => galaxy.remove(), 1400);
+
+    // 3) 태양계 영상이 첫 프레임을 그릴 시간(~250ms)을 준 뒤 은하 페이드 시작
+    //    → 영상 시작 순간 검은 frame이 안 보이고 매끄럽게 이어짐
+    const fadeOutGalaxy = () => {
+      galaxy.classList.add('fading');
+      setTimeout(() => galaxy.remove(), 1500);
+    };
+    if (solarSystemVideo && solarSystemVideo.readyState < 2) {
+      // 아직 첫 프레임 디코드 전이면 canplay 기다림 (안전망 400ms)
+      let started = false;
+      const go = () => { if (!started) { started = true; fadeOutGalaxy(); } };
+      solarSystemVideo.addEventListener('canplay', go, { once: true });
+      setTimeout(go, 400);
+    } else {
+      setTimeout(fadeOutGalaxy, 250);
+    }
   }
 
   /* ─── 태양계 전환 영상 (은하 → 우주씬 사이, 영상 끝나면 자동 진행) ─── */
@@ -1079,7 +1105,6 @@
       // 영상 끝나면 자동으로 우주씬으로 페이드
       solarSystemVideo.addEventListener('ended', endSolarSystem, { once: true });
     } else {
-      // 영상 요소가 없으면 즉시 종료
       setTimeout(endSolarSystem, 100);
     }
   }
