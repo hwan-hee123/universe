@@ -25,6 +25,9 @@
     border-radius: 999px; font-size: 14px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.4);
   }
   #micBtn.listening { background: #d93025; animation: pulse 1.2s infinite; }
+  /* 음성 인식 / 손 인식 토글 / 상태 텍스트 모두 시연용으로 숨김.
+     handBtn은 캘리브가 click()으로 프로그램적으로 호출하니 DOM에는 유지. */
+  #micBtn, #handBtn, #status { display: none !important; }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,48,37,.7);} 50% { box-shadow: 0 0 0 12px rgba(217,48,37,0);} }
   #status {
     background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 6px;
