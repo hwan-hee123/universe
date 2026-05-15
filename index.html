@@ -279,6 +279,68 @@
   /* 옛 sprite 클래스들 — 호환을 위해 숨김 */
   #introScreen .sprite { display: none; }
 
+  /* ─── 은하 회전 영상 화면 ─── */
+  #galaxyScreen {
+    position: fixed; inset: 0; z-index: 10000;
+    background: #000;
+    overflow: hidden;
+    transition: opacity 1.2s ease-out;
+    cursor: pointer;
+    font-family: 'Orbitron', system-ui, sans-serif;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  #galaxyScreen[hidden] { display: none; }
+  #galaxyScreen.fading { opacity: 0; pointer-events: none; }
+  #galaxyScreen .full-video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    object-position: center;
+    background: #000;
+    opacity: 0;
+    animation: introFadeIn 1.4s 0.3s ease-out forwards;
+  }
+  #galaxyScreen .pinch-hint {
+    position: absolute; bottom: 4%; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px; letter-spacing: 0.45em;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    text-align: center;
+    text-shadow: 0 0 12px rgba(180,210,255,0.4);
+    opacity: 0;
+    animation: introHintIn 1.0s 1.6s ease-out forwards, pinchHintPulse 2.2s 2.6s ease-in-out infinite;
+  }
+  /* 핀치 시 빛 — 인트로의 sunrise glow와 같은 자연스러운 효과 (중앙 50%) */
+  #galaxyScreen .flash {
+    position: absolute; left: 50%; top: 50%;
+    width: 80px; height: 80px;
+    margin: -40px 0 0 -40px;
+    pointer-events: none;
+    opacity: 0;
+  }
+  #galaxyScreen .flash .core {
+    position: absolute; inset: 0;
+    background: radial-gradient(circle,
+      rgba(255,255,255,1)     0%,
+      rgba(225,235,255,0.95)  8%,
+      rgba(170,200,255,0.7)  26%,
+      rgba(120,160,255,0.4)  50%,
+      rgba(80,120,220,0.18)  75%,
+      transparent           100%);
+    border-radius: 50%;
+    box-shadow:
+      0 0 60px   20px rgba(220,235,255,0.55),
+      0 0 180px  60px rgba(150,200,255,0.30),
+      0 0 360px 120px rgba(100,160,240,0.18),
+      0 0 600px 200px rgba(80,140,220,0.10);
+    transform: scale(0);
+  }
+  #galaxyScreen .flash.on       { animation: sunGlow 1.8s cubic-bezier(.22,.61,.36,1) forwards; }
+  #galaxyScreen .flash.on .core { animation: sunCore 1.8s cubic-bezier(.22,.61,.36,1) forwards; }
+
   /* 자연스러운 햇빛 글로우 — 이미지의 sunrise spot (지평선 위 태양 빛)에서
      빛이 부풀어 올라 점점 화면 전체를 채우는 transition. top: 40%는 이미지의
      sunrise 위치 (16:9 가로 풀스크린 기준). */
@@ -476,7 +538,20 @@
     <div class="text" id="introLoadingText">INITIALIZING · 0%</div>
   </div>
   <!-- 핀치 안내 — 로딩 완료 후에만 .ready 클래스로 보임 -->
-  <div class="pinch-hint">✋ pinch thumb &amp; index to enter</div>
+  <div class="pinch-hint">✋ pinch thumb &amp; index to continue</div>
+</div>
+
+<!-- ─── 은하 회전 영상 화면 (인트로 → 우주씬 사이) ──────── -->
+<div id="galaxyScreen" hidden aria-label="Galaxy entry">
+  <video class="full-video" id="galaxyVideo"
+         loop muted playsinline preload="auto">
+    <source src="assets/galaxy.mp4" type="video/mp4">
+    <source src="assets/galaxy.webm" type="video/webm">
+  </video>
+  <div class="flash" id="galaxyFlash">
+    <div class="core"></div>
+  </div>
+  <div class="pinch-hint">✋ pinch thumb &amp; index to enter universe</div>
 </div>
 
 <!-- ─── 캘리브레이션 / 시스템 체크 화면 ──────────── -->
@@ -571,19 +646,24 @@
 <!-- ─── 인트로 화면 라이프사이클 ──────────────────── -->
 <script>
 (function(){
-  // ── 화면 순서: 페이지 로드 시 캘리브레이션이 먼저 → 손/머리 인식 + 주먹폄 제스처 →
-  //              인트로(ABYSS 영상) → 핀치 → 우주씬 ──
-  const intro = document.getElementById('introScreen');
-  const calib = document.getElementById('calibScreen');
-  if (!intro || !calib) return;
+  // ── 화면 순서: 캘리브 → 인트로(1회) → 은하(무한루프) → 우주씬 ──
+  const intro  = document.getElementById('introScreen');
+  const calib  = document.getElementById('calibScreen');
+  const galaxy = document.getElementById('galaxyScreen');
+  if (!intro || !calib || !galaxy) return;
   const flash    = document.getElementById('introFlash');
   const hint     = intro.querySelector('.pinch-hint');
   const loadFill = document.getElementById('introLoadingFill');
   const loadText = document.getElementById('introLoadingText');
   const video    = document.getElementById('introVideo');
+  const galaxyVideo = document.getElementById('galaxyVideo');
+  const galaxyFlash = document.getElementById('galaxyFlash');
+  const galaxyHint  = galaxy.querySelector('.pinch-hint');
 
   let introDone     = false;
   let introStarted  = false;
+  let galaxyStarted = false;
+  let galaxyDone    = false;
   let texturesReady = false;
 
   // 영상이 끝나면 마지막 프레임에서 정지 (일부 브라우저에서 자동 리셋 방지)
@@ -773,8 +853,55 @@
     if (!texturesReady) return;
     introDone = true;
     window.__abyssPinchFired = null;
+    // 은하 화면을 인트로 페이드 시작 직전에 띄움 (intro 위에 z 10000으로 깔림)
+    startGalaxy();
     intro.classList.add('fading');
     setTimeout(() => intro.remove(), 1400);
+  }
+
+  /* ─── 은하 화면 (인트로 → 우주씬 사이, 무한루프 영상) ─── */
+  function startGalaxy(){
+    if (galaxyStarted) return;
+    galaxyStarted = true;
+    galaxy.hidden = false;
+
+    // 은하 영상을 처음부터 재생 (loop 속성으로 무한 반복)
+    if (galaxyVideo) {
+      try {
+        galaxyVideo.currentTime = 0;
+        const p = galaxyVideo.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) {}
+    }
+
+    // 우주씬으로 가는 핀치 콜백
+    window.__abyssPinchFired = () => {
+      if (galaxyDone) return;
+      window.__abyssPinchFired = null;   // 이후 핀치 차단 (galaxyDone은 endGalaxy에서)
+      if (galaxyHint) galaxyHint.textContent = '✨ ENTERING UNIVERSE';
+      if (galaxyFlash) galaxyFlash.classList.add('on');
+      setTimeout(endGalaxy, 1500);       // 빛 효과 보여준 뒤 페이드
+    };
+
+    // 60초 안전망 — 핀치 못 받으면 자동 진행
+    setTimeout(() => { if (!galaxyDone) endGalaxy(); }, 60000);
+
+    // 클릭/키보드 스킵
+    galaxy.addEventListener('click', endGalaxy);
+    window.addEventListener('keydown', function onGalaxyKey(e) {
+      if (!galaxyDone && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) {
+        endGalaxy();
+        window.removeEventListener('keydown', onGalaxyKey);
+      }
+    });
+  }
+
+  function endGalaxy(){
+    if (galaxyDone) return;       // 중복 호출 방지 (click + pinch 동시에 들어와도 한 번만)
+    galaxyDone = true;
+    window.__abyssPinchFired = null;
+    galaxy.classList.add('fading');
+    setTimeout(() => galaxy.remove(), 1400);
   }
 
   // ── 페이지 로드 → 캘리브레이션부터 시작 ──
