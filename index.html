@@ -643,7 +643,7 @@
     <div class="text" id="introLoadingText">INITIALIZING · 0%</div>
   </div>
   <!-- 핀치 안내 — 로딩 완료 후에만 .ready 클래스로 보임 -->
-  <div class="pinch-hint">✋ pinch thumb &amp; index to continue</div>
+  <div class="pinch-hint">✋ pinch twice to continue</div>
 </div>
 
 <!-- ─── 태양계 전환 영상 화면 (은하 → 우주씬 사이) ──────── -->
@@ -668,7 +668,7 @@
   <div class="flash" id="galaxyFlash">
     <div class="core"></div>
   </div>
-  <div class="pinch-hint">✋ pinch thumb &amp; index to enter universe</div>
+  <div class="pinch-hint">✋ pinch twice to enter universe</div>
 </div>
 
 <!-- ─── 캘리브레이션 / 시스템 체크 화면 ──────────── -->
@@ -3491,31 +3491,49 @@ function rightPinchPos(rightLm) {
   };
 }
 
-// ── 단일 손 핀치 제스처 (intro → calibration 진입) ──
-// 엄지(4)와 검지(8) 사이 거리를 손바닥 크기(0→9)로 정규화. 손이 카메라에
-// 가까이/멀리 있어도 같은 비율로 판정. 3프레임 안정 후 발화 (오인식 방지).
+// ── 단일 손 더블 핀치 제스처 (인트로/은하 화면 전환용) ──
+// 손가락이 화면에 우연히 가까워졌을 때 한 번에 넘어가지 않도록 두 번 연속
+// 핀치를 요구. 600ms 안에 두 번 핀치 edge가 들어오면 발화.
+// 거리 정규화: 손바닥 크기(손목 0 → 중지 MCP 9) 기준.
 let _pinchStableFrames = 0;
 const _PINCH_STABLE = 3;
-const _PINCH_RATIO_THRESHOLD = 0.18;  // 손바닥 길이 대비 손끝 거리 비율
+const _PINCH_RATIO_THRESHOLD = 0.18;
+let _pinchActive = false;            // 이전 프레임 핀치 유지 중인지 (edge 추적)
+let _lastPinchTime = 0;              // 마지막 핀치 edge 시각
+const _DOUBLE_PINCH_WINDOW_MS = 600; // 이 시간 안에 두 번째 핀치 들어오면 발화
+
 function checkPinchGesture(leftLm, rightLm) {
   if (!window.__abyssPinchFired) return;
   let pinching = false;
   for (const lm of [leftLm, rightLm]) {
     if (!lm) continue;
     const pd  = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-    const ref = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);  // 손목→중지 MCP
+    const ref = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
     if (ref < 0.001) continue;
     if (pd / ref < _PINCH_RATIO_THRESHOLD) { pinching = true; break; }
   }
+
   if (pinching) {
-    if (++_pinchStableFrames >= _PINCH_STABLE) {
-      const cb = window.__abyssPinchFired;
-      window.__abyssPinchFired = null; // one-shot
-      _pinchStableFrames = 0;
-      cb();
+    _pinchStableFrames++;
+    // 안정 프레임 도달 + 직전엔 안 잡혀 있던 경우 → 새 pinch edge
+    if (_pinchStableFrames === _PINCH_STABLE && !_pinchActive) {
+      _pinchActive = true;
+      const now = performance.now();
+      if (_lastPinchTime > 0 && (now - _lastPinchTime) < _DOUBLE_PINCH_WINDOW_MS) {
+        // 두 번째 핀치 — 발화
+        const cb = window.__abyssPinchFired;
+        window.__abyssPinchFired = null;
+        _lastPinchTime = 0;
+        _pinchStableFrames = 0;
+        cb();
+      } else {
+        // 첫 번째 핀치 — 시각 기록만
+        _lastPinchTime = now;
+      }
     }
   } else {
     _pinchStableFrames = 0;
+    _pinchActive = false;
   }
 }
 
