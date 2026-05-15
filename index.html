@@ -327,15 +327,37 @@
     opacity: 0;
     animation: introFadeIn 1.4s 0.3s ease-out forwards;
   }
-  /* PNG UI 오버레이 — 영상 위에 깔리는 UI 그래픽. 영상과 동일하게 contain. */
+  /* 리퀴드 글라스 백드롭 — 영상 위에 깔리는 frosted glass 레이어.
+     blur로 영상을 살짝 흐리게 + saturate로 색감 강화 + 미세 어둡게 →
+     UI 텍스트/아이콘이 더 잘 읽힘 (Apple Liquid Glass 톤). */
+  #galaxyScreen .glass-backdrop {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    backdrop-filter: blur(3px) saturate(1.15) brightness(0.88);
+    -webkit-backdrop-filter: blur(3px) saturate(1.15) brightness(0.88);
+    /* 상하단에 살짝 vignette을 더해 가독성 ↑ */
+    background:
+      linear-gradient(180deg,
+        rgba(0,0,0,0.18) 0%,
+        rgba(0,0,0,0)    20%,
+        rgba(0,0,0,0)    78%,
+        rgba(0,0,0,0.22) 100%);
+    opacity: 0;
+    animation: introFadeIn 1.4s 0.4s ease-out forwards;
+  }
+  /* PNG UI 오버레이 — 영상+백드롭 위. drop-shadow로 텍스트 가독성 ↑ */
   #galaxyScreen .full-overlay {
     position: absolute; inset: 0;
     width: 100%; height: 100%;
     object-fit: contain;
     object-position: center;
-    pointer-events: none;    /* 클릭이 뒤로 통과하도록 */
+    pointer-events: none;
     opacity: 0;
-    animation: introFadeIn 1.4s 0.6s ease-out forwards;  /* 영상보다 약간 늦게 페이드인 */
+    animation: introFadeIn 1.4s 0.6s ease-out forwards;
+    /* 어두운 halo로 텍스트가 영상 위에 떠 보이게 + 흰 미세 글로우로 글라스 엣지 */
+    filter:
+      drop-shadow(0 0 10px rgba(0,0,0,0.85))
+      drop-shadow(0 0 3px rgba(255,255,255,0.18));
   }
   #galaxyScreen .pinch-hint {
     position: absolute; bottom: 4%; left: 50%;
@@ -597,6 +619,9 @@
     <source src="assets/galaxy.mp4" type="video/mp4">
     <source src="assets/galaxy.webm" type="video/webm">
   </video>
+  <!-- 리퀴드 글라스 레이어 — 영상 위, PNG 아래에 깔리는 frosted glass 필터.
+       영상을 살짝 블러+밝기조정해서 PNG의 UI가 더 잘 읽히게 함. -->
+  <div class="glass-backdrop"></div>
   <!-- UI 오버레이 — 영상 위에 PNG 한 장 깔림 (UI 요소들이 들어간 그래픽) -->
   <img class="full-overlay" id="galaxyOverlay" src="assets/galaxy.png" alt="">
   <div class="flash" id="galaxyFlash">
