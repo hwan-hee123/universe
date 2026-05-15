@@ -2961,17 +2961,9 @@ function updateIsolationLines(){
   const cy = H / 2;
   const planetScreenRadius = H * 0.11;   // 행성 화면 반경 추정
 
-  // ── 디버그: 화면 좌상단(0,0)→우하단(W,H) 빨간 대각선 (SVG 렌더링 자체 동작 검증) ──
-  const debug = document.createElementNS(SVG_NS, 'line');
-  debug.setAttribute('x1', 0);
-  debug.setAttribute('y1', 0);
-  debug.setAttribute('x2', W);
-  debug.setAttribute('y2', H);
-  debug.setAttribute('stroke', 'red');
-  debug.setAttribute('stroke-width', '3');
-  svg.appendChild(debug);
-
   if (!cards.length) return;
+
+  const cardGap = 18;   // 카드와 선 끝 사이 여백 (px) — 선이 카드까지 닿지 않고 살짝 못 미침
 
   cards.forEach(card => {
     if (card.style.display === 'none') return;
@@ -2985,22 +2977,29 @@ function updateIsolationLines(){
     const dy = ty - cy;
     const len = Math.hypot(dx, dy);
     if (len < 1) return;
-    const sx = cx + (dx / len) * planetScreenRadius;
-    const sy = cy + (dy / len) * planetScreenRadius;
+    const ux = dx / len, uy = dy / len;
+    // 행성 표면 시작점 (이쪽 끝에 원이 붙음)
+    const sx = cx + ux * planetScreenRadius;
+    const sy = cy + uy * planetScreenRadius;
+    // 카드 쪽 끝점 — 카드 모서리에서 cardGap 만큼 안쪽(행성 방향)으로 당김
+    const ex = tx - ux * cardGap;
+    const ey = ty - uy * cardGap;
 
     const line = document.createElementNS(SVG_NS, 'line');
     line.setAttribute('x1', sx);
     line.setAttribute('y1', sy);
-    line.setAttribute('x2', tx);
-    line.setAttribute('y2', ty);
+    line.setAttribute('x2', ex);
+    line.setAttribute('y2', ey);
     line.setAttribute('stroke', '#fff');
-    line.setAttribute('stroke-width', '2');
+    line.setAttribute('stroke-width', '1.6');
     line.setAttribute('stroke-linecap', 'round');
+    line.setAttribute('opacity', '0.85');
     svg.appendChild(line);
 
+    // 끝 원 — 행성쪽 (시작점) 에 배치
     const dot = document.createElementNS(SVG_NS, 'circle');
-    dot.setAttribute('cx', tx);
-    dot.setAttribute('cy', ty);
+    dot.setAttribute('cx', sx);
+    dot.setAttribute('cy', sy);
     dot.setAttribute('r', '4');
     dot.setAttribute('fill', '#fff');
     svg.appendChild(dot);
