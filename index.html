@@ -619,6 +619,24 @@
   #isolationInfo .info-card.pos-bottom-left  { bottom: 14%; left:  calc(6% + 240px); animation-delay: 0.5s; }
   #isolationInfo .info-card.pos-bottom-right { bottom: 14%; right: calc(6% + 240px); animation-delay: 0.7s; }
 
+  /* ─── 고립 모드 행성 이름 (HTML 평면 오버레이, 행성 위 화면 고정) ─── */
+  #isolationPlanetName {
+    position: fixed; top: 14%; left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(22px, 2.4vw, 36px);
+    letter-spacing: 0.32em;
+    color: #fff;
+    text-shadow: 0 0 14px rgba(180,210,255,0.4), 0 2px 12px rgba(0,0,0,0.7);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.45s ease-out;
+    white-space: nowrap;
+  }
+  #isolationPlanetName[hidden] { display: none; }
+  #isolationPlanetName.visible { opacity: 1; }
+
   /* ─── 고립 모드 나가기 버튼 (행성/태양 아래 중앙, 핀치로 작동) ─── */
   #exitIsolationBtn {
     position: fixed; bottom: 6%; left: 50%;
@@ -708,7 +726,10 @@
   </div>
 </div>
 
-<!-- ─── 고립 모드 나가기 버튼 (좌상단, 고립 모드에서만 표시) ─── -->
+<!-- ─── 고립 모드 행성 이름 (평면 HTML, 화면 윗쪽 고정) ─── -->
+<div id="isolationPlanetName" hidden>—</div>
+
+<!-- ─── 고립 모드 나가기 버튼 (행성 아래 중앙, 고립 모드에서만 표시) ─── -->
 <div id="exitIsolationBtn" hidden><span class="arrow">←</span>나가기</div>
 
 <!-- ─── 별자리 활성화 버튼 (좌측 "탐험 가이드" 아래에 항상 표시, 핀치로 토글) ─── -->
@@ -2941,8 +2962,24 @@ function enterIsolation(key){
   followKey = null; followLocalOffset = null;
   followMoonMesh = null; followAim = null; followGalaxyGroup = null;
 
-  // 정보 카드 + 나가기 버튼 표시
+  // 정보 카드 + 나가기 버튼 + 평면 행성 이름 표시
   showIsolationInfo(key);
+  // 행성 이름 — 3D 스프라이트 라벨 대신 HTML 평면 텍스트 (화면 윗쪽 고정)
+  const nameEl = document.getElementById('isolationPlanetName');
+  if (nameEl) {
+    let displayName;
+    if (key === 'sun') displayName = '태양 (Sun)';
+    else {
+      const pd = PLANETS.find(p => p.key === key);
+      displayName = pd ? pd.name : key;
+    }
+    nameEl.textContent = displayName;
+    nameEl.hidden = false;
+    requestAnimationFrame(() => nameEl.classList.add('visible'));
+  }
+  // 기존 3D 스프라이트 라벨 숨김 (중복 방지)
+  if (mesh.userData.label) mesh.userData.label.visible = false;
+
   const exitBtn = document.getElementById('exitIsolationBtn');
   if (exitBtn) {
     exitBtn.hidden = false;
@@ -2967,15 +3004,22 @@ function exitIsolation(){
     moon.visible = true;
     if (moon.userData.label) moon.userData.label.visible = true;
   }
+  // 3D 스프라이트 라벨 다시 보임
+  if (mesh && mesh.userData.label) mesh.userData.label.visible = true;
   isolationKey = null;
   isolationMesh = null;
   isolationOrigScale = null;
   hideIsolationInfo();
-  // 나가기 버튼 숨김
+  // 나가기 버튼 + 평면 행성 이름 숨김
   const exitBtn = document.getElementById('exitIsolationBtn');
   if (exitBtn) {
     exitBtn.classList.remove('visible');
     setTimeout(() => { exitBtn.hidden = true; }, 300);
+  }
+  const nameEl = document.getElementById('isolationPlanetName');
+  if (nameEl) {
+    nameEl.classList.remove('visible');
+    setTimeout(() => { nameEl.hidden = true; }, 450);
   }
 }
 
