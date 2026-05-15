@@ -2629,37 +2629,46 @@ function handleSelection(target) {
 }
 
 // ─── 행성 고립 모드 (같은 행성 두 번째 핀치 → 화면 중앙에 단독 표시) ───
-const ISOLATION_CENTER = new THREE.Vector3(0, 80, -1500);
+// 태양을 카메라와 행성 사이에 두어 "태양을 등지고 행성을 바라보는" 구도.
+// 즉 sunLight가 행성의 카메라쪽 면을 비춤 → 행성이 환하게 보임.
+const ISO_PLANET_Z_OFFSET = -300;  // 행성 z = sunCenter.z + 이 값 (태양보다 더 -Z)
+const ISO_CAMERA_Z_OFFSET = +120;  // 카메라 z = sunCenter.z + 이 값 (태양보다 +Z)
 let isolationKey       = null;
 let isolationMesh      = null;
 let isolationOrigScale = null;
+const isolationPlanetPos = new THREE.Vector3();
 
 function enterIsolation(key){
   const mesh = planetMeshes[key];
   if (!mesh) return;
-  // 이전 isolation 정리 (다른 행성이면 그것 먼저 복원)
   if (isolationKey && isolationKey !== key) exitIsolation();
 
   isolationKey  = key;
   isolationMesh = mesh;
   isolationOrigScale = mesh.scale.clone();
 
-  // 행성을 무대 중앙으로 이동 + 크게 (반지름과 무관하게 모두 비슷한 크기로 보이게)
-  mesh.position.copy(ISOLATION_CENTER);
+  // 행성을 태양 너머(카메라 반대편)로 이동 → 태양이 행성을 카메라쪽으로 비추게 됨
+  isolationPlanetPos.set(sunCenter.x, sunCenter.y, sunCenter.z + ISO_PLANET_Z_OFFSET);
+  mesh.position.copy(isolationPlanetPos);
+
+  // 행성 크기를 표준화 (어느 행성이든 비슷한 크기로 보이게)
   const planetData = PLANETS.find(p => p.key === key);
   const baseRadius = planetData ? planetData.radius : 12;
   const targetVisualRadius = 70;
   mesh.scale.setScalar(targetVisualRadius / baseRadius);
 
-  // 다른 천체 모두 숨김 (그 행성만 보이게)
+  // 다른 천체 모두 숨김 (그 행성만 보이게) + 태양 본체 + 코로나 스프라이트 숨김
   setVisibility(new Set([key]));
   if (sun) sun.visible = false;
+  if (typeof sunCoronaSprites !== 'undefined' && sunCoronaSprites) {
+    sunCoronaSprites.forEach(s => s.visible = false);
+  }
   for (const moon of allMoons) moon.visible = false;
 
-  // 카메라를 행성 정면으로 이동 (z+ 방향에서 바라보기)
-  camera.position.set(ISOLATION_CENTER.x, ISOLATION_CENTER.y, ISOLATION_CENTER.z + 240);
-  camera.lookAt(ISOLATION_CENTER);
-  controls.target.copy(ISOLATION_CENTER);
+  // 카메라를 태양 앞쪽(+Z)에 배치 → 카메라가 행성을 바라보면 태양은 등 뒤
+  camera.position.set(sunCenter.x, sunCenter.y, sunCenter.z + ISO_CAMERA_Z_OFFSET);
+  camera.lookAt(isolationPlanetPos);
+  controls.target.copy(isolationPlanetPos);
 
   // 모든 follow 해제 (고립 모드와 충돌)
   followKey = null; followLocalOffset = null;
@@ -2675,6 +2684,9 @@ function exitIsolation(){
   }
   setVisibility('all');
   if (sun) sun.visible = true;
+  if (typeof sunCoronaSprites !== 'undefined' && sunCoronaSprites) {
+    sunCoronaSprites.forEach(s => s.visible = true);
+  }
   for (const moon of allMoons) moon.visible = true;
   isolationKey = null;
   isolationMesh = null;
@@ -4526,9 +4538,9 @@ renderer.setAnimationLoop(() => {
 
   for (const p of PLANETS) {
     const mesh = planetMeshes[p.key];
-    // 고립 모드 행성은 궤도 갱신 스킵 — 중앙에 고정, 자전만 유지
+    // 고립 모드 행성은 궤도 갱신 스킵 — isolationPlanetPos에 고정, 자전만 유지
     if (isolationKey === p.key) {
-      mesh.position.copy(ISOLATION_CENTER);
+      mesh.position.copy(isolationPlanetPos);
       mesh.rotation.y += dt * p.spin;
       if (mesh.userData.cloudsMesh) mesh.userData.cloudsMesh.rotation.y += dt * 0.08;
       const label = mesh.userData.label;
