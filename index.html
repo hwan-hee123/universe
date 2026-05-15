@@ -3075,6 +3075,7 @@ function enterIsolation(key){
 
 function exitIsolation(){
   if (!isolationKey) return;
+  const savedKey = isolationKey;          // follow 복귀용
   const mesh = isolationMesh;
   if (mesh && isolationOrigScale) {
     mesh.scale.copy(isolationOrigScale);
@@ -3095,6 +3096,8 @@ function exitIsolation(){
   isolationKey = null;
   isolationMesh = null;
   isolationOrigScale = null;
+  // 카메라를 원래 선택했던 행성/태양 시점으로 복귀 (고립 진입 전 follow 상태 재현)
+  setFollow(savedKey);
   hideIsolationInfo();
   // 나가기 버튼 + 평면 행성 이름 숨김
   const exitBtn = document.getElementById('exitIsolationBtn');
