@@ -608,10 +608,10 @@
     color: rgba(255,255,255,0.92);
     text-shadow: 0 0 8px rgba(0,0,0,0.8);
   }
-  /* 위치 — 행성 주변 3 지점 */
-  #isolationInfo .info-card.pos-top-right    { top: 16%;    right: 6%;  animation-delay: 0.3s; }
-  #isolationInfo .info-card.pos-bottom-left  { bottom: 14%; left:  6%;  animation-delay: 0.5s; }
-  #isolationInfo .info-card.pos-bottom-right { bottom: 14%; right: 6%;  animation-delay: 0.7s; }
+  /* 위치 — 행성 주변 3 지점. 카드 폭(240px)만큼 안쪽으로 이동해 행성에 더 가까이 배치 */
+  #isolationInfo .info-card.pos-top-right    { top: 16%;    right: calc(6% + 240px); animation-delay: 0.3s; }
+  #isolationInfo .info-card.pos-bottom-left  { bottom: 14%; left:  calc(6% + 240px); animation-delay: 0.5s; }
+  #isolationInfo .info-card.pos-bottom-right { bottom: 14%; right: calc(6% + 240px); animation-delay: 0.7s; }
 
   /* ─── 별자리 활성화 버튼 (좌측, "탐험 가이드" 바로 아래에 항상 표시) ─── */
   /* PNG 오버레이의 "탐험 가이드" 버튼 좌측 정렬 + 위 약 1cm 간격 */
