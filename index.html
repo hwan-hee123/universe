@@ -545,6 +545,9 @@
 </head>
 <body>
 
+<!-- ─── 배경 음악 (전체 페이지, 무한 루프) ─── -->
+<audio id="bgm" src="assets/bgm.mp3" loop preload="auto"></audio>
+
 <!-- ─── ABYSS 인트로 화면 ─────────────────────────── -->
 <!-- 같은 원본 이미지를 부위별로 클립해서 여러 레이어로 깔고, -->
 <!-- 손 레이어만 양쪽 밖에서 안으로 슬라이드 → 검지가 만나면 -->
@@ -691,6 +694,28 @@
 <!-- ─── 인트로 화면 라이프사이클 ──────────────────── -->
 <script>
 (function(){
+  // ── 배경 음악 — 페이지 로드 즉시 시도하고, 브라우저가 자동재생 막으면
+  //   첫 사용자 이벤트(클릭/터치/키)에서 재시도. 한 번 시작되면 끝까지 루프. ──
+  const bgm = document.getElementById('bgm');
+  if (bgm) {
+    bgm.volume = 0.45;             // 너무 시끄럽지 않게 시작 (조정 가능)
+    const tryPlayBgm = () => {
+      if (!bgm.paused) return;
+      const p = bgm.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    };
+    tryPlayBgm();                  // 일단 자동재생 시도
+    // 자동재생 실패 시 첫 user gesture에서 재시도
+    const events = ['click', 'keydown', 'touchstart', 'pointerdown'];
+    const onFirstGesture = () => {
+      tryPlayBgm();
+      if (!bgm.paused) {
+        events.forEach(ev => window.removeEventListener(ev, onFirstGesture, true));
+      }
+    };
+    events.forEach(ev => window.addEventListener(ev, onFirstGesture, true));
+  }
+
   // ── 화면 순서: 캘리브 → 인트로(1회) → 은하(무한루프) → 우주씬 ──
   const intro  = document.getElementById('introScreen');
   const calib  = document.getElementById('calibScreen');
