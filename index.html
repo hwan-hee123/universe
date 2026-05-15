@@ -168,6 +168,8 @@
     cursor: pointer;
     font-family: 'Orbitron', system-ui, sans-serif;
   }
+  /* hidden 속성이 display:flex보다 우선되도록 명시 (안 그러면 hidden이 안 먹힘) */
+  #introScreen[hidden] { display: none; }
   #introScreen.fading { opacity: 0; pointer-events: none; }
   #introScreen .stars {
     position: absolute; inset: 0;
