@@ -831,8 +831,8 @@
       if (introDone) return;
       if (!texturesReady) return;
       if (hint) hint.textContent = '✨ ENTERING';
-      flash.classList.add('on');
-      setTimeout(endIntro, 1500);
+      // 빛 효과 제거 — 그냥 텍스트 표시 후 페이드 시작
+      setTimeout(endIntro, 700);
     };
 
     // 자동 진행 / 클릭 / 키보드 스킵 모두 제거 — 핀치 제스처(엄지+검지)만 진행 가능
@@ -867,10 +867,10 @@
     // 우주씬으로 가는 핀치 콜백
     window.__abyssPinchFired = () => {
       if (galaxyDone) return;
-      window.__abyssPinchFired = null;   // 이후 핀치 차단 (galaxyDone은 endGalaxy에서)
+      window.__abyssPinchFired = null;   // 이후 핀치 차단
       if (galaxyHint) galaxyHint.textContent = '✨ ENTERING UNIVERSE';
-      if (galaxyFlash) galaxyFlash.classList.add('on');
-      setTimeout(endGalaxy, 1500);       // 빛 효과 보여준 뒤 페이드
+      // 빛 효과 제거 — 텍스트 표시 후 자연스럽게 페이드
+      setTimeout(endGalaxy, 700);
     };
 
     // 자동 진행 / 클릭 / 키보드 스킵 모두 제거 — 핀치 제스처(엄지+검지)만 진행 가능
