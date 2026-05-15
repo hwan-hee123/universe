@@ -2619,12 +2619,66 @@ function buildSelectables() {
 }
 
 function handleSelection(target) {
+  exitIsolation();   // 새 선택 → 이전 isolation 해제
   const kind = target.userData.selKind;
   setVisibility('all');
   if (kind === 'sun')    { setFollow('sun'); setStatus('👉🤏 → 태양'); }
   else if (kind === 'planet') { setFollow(target.userData.selKey); setStatus('👉🤏 → ' + target.userData.name); }
   else if (kind === 'moon')   { setFollowMoon(target);             setStatus('👉🤏 → ' + (target.userData.name || '위성')); }
   else if (kind === 'galaxy') { setFollowGalaxy(target.userData.selGroup); setStatus('👉🤏 → ' + target.userData.selGroup.userData.kr); }
+}
+
+// ─── 행성 고립 모드 (같은 행성 두 번째 핀치 → 화면 중앙에 단독 표시) ───
+const ISOLATION_CENTER = new THREE.Vector3(0, 80, -1500);
+let isolationKey       = null;
+let isolationMesh      = null;
+let isolationOrigScale = null;
+
+function enterIsolation(key){
+  const mesh = planetMeshes[key];
+  if (!mesh) return;
+  // 이전 isolation 정리 (다른 행성이면 그것 먼저 복원)
+  if (isolationKey && isolationKey !== key) exitIsolation();
+
+  isolationKey  = key;
+  isolationMesh = mesh;
+  isolationOrigScale = mesh.scale.clone();
+
+  // 행성을 무대 중앙으로 이동 + 크게 (반지름과 무관하게 모두 비슷한 크기로 보이게)
+  mesh.position.copy(ISOLATION_CENTER);
+  const planetData = PLANETS.find(p => p.key === key);
+  const baseRadius = planetData ? planetData.radius : 12;
+  const targetVisualRadius = 70;
+  mesh.scale.setScalar(targetVisualRadius / baseRadius);
+
+  // 다른 천체 모두 숨김 (그 행성만 보이게)
+  setVisibility(new Set([key]));
+  if (sun) sun.visible = false;
+  for (const moon of allMoons) moon.visible = false;
+
+  // 카메라를 행성 정면으로 이동 (z+ 방향에서 바라보기)
+  camera.position.set(ISOLATION_CENTER.x, ISOLATION_CENTER.y, ISOLATION_CENTER.z + 240);
+  camera.lookAt(ISOLATION_CENTER);
+  controls.target.copy(ISOLATION_CENTER);
+
+  // 모든 follow 해제 (고립 모드와 충돌)
+  followKey = null; followLocalOffset = null;
+  followMoonMesh = null; followAim = null; followGalaxyGroup = null;
+}
+
+function exitIsolation(){
+  if (!isolationKey) return;
+  const mesh = isolationMesh;
+  if (mesh && isolationOrigScale) {
+    mesh.scale.copy(isolationOrigScale);
+    // position은 다음 animation 프레임에서 궤도 위치로 자동 복원됨
+  }
+  setVisibility('all');
+  if (sun) sun.visible = true;
+  for (const moon of allMoons) moon.visible = true;
+  isolationKey = null;
+  isolationMesh = null;
+  isolationOrigScale = null;
 }
 
 // ── 손목 메뉴 (G 제스처 시 표시) ──
@@ -2985,7 +3039,6 @@ const fingerMenu = {
   prevRightX: null,      // 가로 델타 계산 (D 둘러보기 + A 더블핀치 둘러보기 공용)
   prevRightY: null,      // 세로 델타 계산
   lastSelectedKey: null, // A 모드에서 마지막에 선택한 천체 키 (더블 핀치 감지용)
-  orbitLockMesh: null,   // A 더블 핀치로 둘러보기 잠긴 대상 mesh (회전 중심)
 };
 
 // 둘러보기 (orbit drag) — 카메라 spherical 회전 계산용 재사용 객체 (D 모드 + A 더블핀치 공용)
@@ -3631,7 +3684,7 @@ function processWebcamGestures(dt) {
   // ── 모드별 액션: 오른손이 왼손에서 떨어진 공중에서 핀치할 때 ──
   const freePinch = rPinching && !onFinger;
   if (freePinch && fingerMenu.mode === 'A') {
-    // A 선택 — edge trigger + 쿨다운. 같은 천체 두 번째 핀치 → orbit lock 모드 진입.
+    // A 선택 — edge trigger + 쿨다운. 같은 행성 두 번째 핀치 → 고립 모드 진입.
     if (justPinched && now - fingerMenu.lastFireA > ACTION_COOLDOWN_A) {
       const ndcX = (1 - rPos.x) * 2 - 1;
       const ndcY = -(rPos.y * 2 - 1);
@@ -3641,44 +3694,24 @@ function processWebcamGestures(dt) {
       if (hits.length > 0) {
         const obj  = hits[0].object;
         const kind = obj.userData.selKind;
-        // 천체 식별 키 (selKey가 있으면 사용, 없으면 객체 reference)
         const key  = obj.userData.selKey || obj.uuid;
 
-        if (key === fingerMenu.lastSelectedKey) {
-          // 같은 천체 두 번째 핀치 → 둘러보기 잠금
-          let centerMesh = obj;
-          if (kind === 'planet' && obj.userData.selKey && planetMeshes[obj.userData.selKey]) {
-            centerMesh = planetMeshes[obj.userData.selKey];
-          } else if (kind === 'sun') {
-            centerMesh = sun;
-          }
-          fingerMenu.orbitLockMesh = centerMesh;
-          setStatus(`🔄 ${obj.userData.name || '대상'} 둘러보기 — 핀치 드래그로 회전`);
-          fingerMenu.prevRightX = null; fingerMenu.prevRightY = null;
+        // 같은 행성 두 번째 핀치 → 고립 모드 (행성을 중앙에 단독 표시)
+        if (kind === 'planet' && key === fingerMenu.lastSelectedKey) {
+          enterIsolation(key);
+          setStatus(`🔬 ${obj.userData.name} 고립 — 중지(B) 선택 후 D 둘러보기로 회전`);
+          fingerMenu.lastSelectedKey = null;  // 세 번째 핀치는 새 선택으로 처리
         } else {
-          // 새 천체 → 기존처럼 비행
+          // 새 천체 → 일반 비행 (handleSelection이 isolation도 자동 해제함)
           handleSelection(obj);
           fingerMenu.lastSelectedKey = key;
-          fingerMenu.orbitLockMesh = null;
         }
         fingerMenu.lastFireA = now;
       } else {
         setStatus('👍 가리킨 곳에 천체 없음');
       }
     }
-
-    // orbit lock이 활성화된 상태에서 핀치 드래그 → 그 천체 중심으로 카메라 회전
-    if (fingerMenu.orbitLockMesh && fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
-      const dx = rPos.x - fingerMenu.prevRightX;
-      const dy = rPos.y - fingerMenu.prevRightY;
-      applyOrbitDrag(fingerMenu.orbitLockMesh.position, dx, dy);
-    }
-    fingerMenu.prevRightX = rPos.x;
-    fingerMenu.prevRightY = rPos.y;
-
-    mp.tag.textContent = fingerMenu.orbitLockMesh
-      ? `🔄 둘러보기 — 같은 행성 핀치 드래그로 회전`
-      : `A 선택 모드 — 핀치 ✓`;
+    mp.tag.textContent = `A 선택 모드 — 핀치 ✓`;
   } else if (freePinch && fingerMenu.mode === 'D') {
     // D 둘러보기 — 핀치 드래그로 controls.target 중심 카메라 orbit
     if (fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
@@ -4493,6 +4526,15 @@ renderer.setAnimationLoop(() => {
 
   for (const p of PLANETS) {
     const mesh = planetMeshes[p.key];
+    // 고립 모드 행성은 궤도 갱신 스킵 — 중앙에 고정, 자전만 유지
+    if (isolationKey === p.key) {
+      mesh.position.copy(ISOLATION_CENTER);
+      mesh.rotation.y += dt * p.spin;
+      if (mesh.userData.cloudsMesh) mesh.userData.cloudsMesh.rotation.y += dt * 0.08;
+      const label = mesh.userData.label;
+      if (label) label.position.set(mesh.position.x, mesh.position.y + p.radius + 22, mesh.position.z);
+      continue;
+    }
     mesh.userData.angle += dt * p.speed;
     const a = mesh.userData.angle;
     mesh.position.set(
