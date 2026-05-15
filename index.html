@@ -2544,20 +2544,9 @@ function generateGalaxyGeometry(g) {
   return geo;
 }
 
-const EXTERNAL_GALAXIES = [
-  { id: 'M31',  kr: '안드로메다 은하 (M31)',  ra:  10.68, dec:  41.27,
-    radius: 1500, particles: 25000, arms: 2, armTwist: 0.0008, thickness: 70, coreFrac: 0.18, irregular: false },
-  { id: 'M33',  kr: '삼각형자리 은하 (M33)',  ra:  23.46, dec:  30.66,
-    radius:  700, particles: 12000, arms: 2, armTwist: 0.0012, thickness: 35, coreFrac: 0.12, irregular: false },
-  { id: 'LMC',  kr: '대마젤란 은하 (LMC)',    ra:  80.89, dec: -69.76,
-    radius:  600, particles: 10000, thickness: 100, irregular: true },
-  { id: 'SMC',  kr: '소마젤란 은하 (SMC)',    ra:  13.16, dec: -72.83,
-    radius:  350, particles:  6000, thickness:  70, irregular: true },
-  { id: 'M51',  kr: '소용돌이 은하 (M51)',    ra: 202.47, dec:  47.20,
-    radius:  800, particles: 16000, arms: 2, armTwist: 0.0010, thickness: 40, coreFrac: 0.15, irregular: false },
-  { id: 'M104', kr: '솜브레로 은하 (M104)',   ra: 190.00, dec: -11.62,
-    radius:  700, particles: 14000, arms: 4, armTwist: 0.0005, thickness: 60, coreFrac: 0.30, irregular: false, edgeOn: true },
-];
+// 외부 은하 (M31, M33, LMC, SMC, M51, M104) — 시연 단순화를 위해 모두 제거.
+// 이 배열을 비우면 생성 for 루프가 아무것도 추가하지 않고, 검색 결과 + 비행 대상에서도 빠짐.
+const EXTERNAL_GALAXIES = [];
 
 const GALAXY_DIST = 18000; // 우리은하 sphere 안쪽
 const galaxyItems = [];
