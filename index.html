@@ -4220,7 +4220,8 @@ function processWebcamGestures(dt) {
     // D 둘러보기 — 핀치 드래그로 controls.target 중심 카메라 orbit
     if (fingerMenu.prevRightX !== null && fingerMenu.prevRightY !== null) {
       const dx = rPos.x - fingerMenu.prevRightX;
-      const dy = rPos.y - fingerMenu.prevRightY;
+      // 수직 축 반전 — 손을 위로 올리면 시야도 위로 (자연스러운 매핑)
+      const dy = -(rPos.y - fingerMenu.prevRightY);
       applyOrbitDrag(controls.target, dx, dy);
     }
     fingerMenu.prevRightX = rPos.x;
