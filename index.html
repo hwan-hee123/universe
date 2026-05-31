@@ -1373,6 +1373,51 @@ import { RenderPass }        from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass }   from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass }        from 'three/addons/postprocessing/OutputPass.js';
 
+// ── Firebase v10 (modular) — 별 명명 공유용 ──
+import { initializeApp }     from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
+import { getFirestore, collection, doc, setDoc, onSnapshot, serverTimestamp }
+                              from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
+
+// ─────────────────────────────────────────────
+// Firebase 설정 — 콘솔(Project Settings → Web app)에서 받은 firebaseConfig 를 그대로 붙여넣기
+// 빈 상태면 자동으로 localStorage 모드(로컬 전용)로 동작.
+// 채우는 즉시 Firestore 실시간 공유 모드로 전환됨.
+// ─────────────────────────────────────────────
+const FIREBASE_CONFIG = {
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
+};
+const FIREBASE_ENABLED = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId;
+let _firestore = null;
+if (FIREBASE_ENABLED) {
+  try {
+    const _fbApp = initializeApp(FIREBASE_CONFIG);
+    _firestore = getFirestore(_fbApp);
+    console.log('[abyss] Firebase enabled — 별 명명이 모든 사용자와 공유됩니다');
+  } catch (e) {
+    console.warn('[abyss] Firebase init 실패, localStorage 모드로 폴백', e);
+    _firestore = null;
+  }
+} else {
+  console.log('[abyss] Firebase config 비어있음 — localStorage 모드 (로컬 전용)');
+}
+
+// 익명 사용자 ID (브라우저별 1회 발급, 본인 별 표시용)
+function _getAnonUserId() {
+  let id = null;
+  try { id = localStorage.getItem('abyss_user_id'); } catch (e) {}
+  if (!id) {
+    id = 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    try { localStorage.setItem('abyss_user_id', id); } catch (e) {}
+  }
+  return id;
+}
+const ABYSS_USER_ID = _getAnonUserId();
+
 const loadingEl = document.getElementById('loading');
 
 // ─── 씬 / 카메라 / 렌더러 ────────────────────────────
@@ -5445,7 +5490,38 @@ function initDiscoverableStars() {
     });
   }
 
-  // localStorage 에서 명명된 별 복원 (시드 동일 → id로 매칭됨)
+  // ── 명명된 별 복원/실시간 sync ──
+  if (_firestore) {
+    // Firestore 실시간 구독 — 다른 사용자가 별을 명명하면 즉시 내 화면에도 등장
+    try {
+      const col = collection(_firestore, 'named_stars');
+      onSnapshot(col, (snap) => {
+        snap.forEach((d) => {
+          const data = d.data();
+          const idx = typeof data.starId === 'number' ? data.starId : parseInt(d.id, 10);
+          const s = discoverableStars[idx];
+          if (!s || s.discovered) return;
+          s.discovered = true;
+          s.userName   = data.name || '?';
+          s.ownerId    = data.ownerId || null;
+          s.isMine     = s.ownerId === ABYSS_USER_ID;
+          _attachStarLabel(s);
+        });
+      }, (err) => {
+        console.warn('[abyss] Firestore 구독 실패, localStorage 폴백', err);
+        _restoreNamedStarsFromLocal();
+      });
+    } catch (e) {
+      console.warn('[abyss] Firestore 호출 실패, localStorage 폴백', e);
+      _restoreNamedStarsFromLocal();
+    }
+  } else {
+    _restoreNamedStarsFromLocal();
+  }
+}
+
+// localStorage 폴백: 시드 동일 → id로 매칭
+function _restoreNamedStarsFromLocal() {
   try {
     const saved = JSON.parse(localStorage.getItem('abyss_named_stars') || '{}');
     for (const [id, name] of Object.entries(saved)) {
@@ -5453,6 +5529,7 @@ function initDiscoverableStars() {
       if (s) {
         s.discovered = true;
         s.userName   = name;
+        s.isMine     = true;       // 로컬 모드에서는 모두 본인 것
         _attachStarLabel(s);
       }
     }
@@ -5460,6 +5537,7 @@ function initDiscoverableStars() {
 }
 
 // 명명된 별 라벨 (canvas → sprite) — 행성 라벨과 동일한 거리 기반 자동 스케일링
+// 본인이 만든 별은 시안 강조색, 다른 사람 별은 일반 흰색
 function _attachStarLabel(star) {
   if (star._label) return;
   const c = document.createElement('canvas');
@@ -5468,7 +5546,7 @@ function _attachStarLabel(star) {
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0, 0, 512, 128);
   ctx.font = 'bold 56px system-ui, sans-serif';
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = star.isMine ? '#7fe0ff' : '#fff';   // 내 별 = 시안
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(0,0,0,0.9)';
@@ -5606,7 +5684,7 @@ function enterStarNaming(star) {
   }
 }
 
-function confirmStarNaming() {
+async function confirmStarNaming() {
   if (!discoveryStar) return;
   const input = document.getElementById('starNameInput');
   const name = input ? input.value.trim() : '';
@@ -5614,18 +5692,48 @@ function confirmStarNaming() {
     if (input) input.focus();
     return;
   }
+  if (name.length > 30) {
+    setStatus('이름은 30자 이내로 입력해주세요');
+    if (input) input.focus();
+    return;
+  }
+
+  // 로컬 즉시 반영
   discoveryStar.userName   = name;
   discoveryStar.discovered = true;
+  discoveryStar.ownerId    = ABYSS_USER_ID;
+  discoveryStar.isMine     = true;
   _attachStarLabel(discoveryStar);
 
+  if (_firestore) {
+    // Firestore에 쓰기 — 같은 starId가 이미 있으면 보안 규칙이 거부 (먼저 발견한 사람이 주인)
+    try {
+      const ref = doc(_firestore, 'named_stars', String(discoveryStar.id));
+      await setDoc(ref, {
+        starId:    discoveryStar.id,
+        name:      name,
+        ownerId:   ABYSS_USER_ID,
+        createdAt: serverTimestamp(),
+      });
+      setStatus(`⭐ '${name}' 별이 모두의 우주에 등록되었습니다`);
+    } catch (e) {
+      console.warn('[abyss] Firestore 쓰기 실패, 로컬에만 저장', e);
+      _saveNamedStarLocal(discoveryStar.id, name);
+      setStatus(`⭐ '${name}' 별이 등록되었습니다 (오프라인)`);
+    }
+  } else {
+    _saveNamedStarLocal(discoveryStar.id, name);
+    setStatus(`⭐ '${name}' 별이 우주에 등록되었습니다`);
+  }
+  exitStarDiscovery();
+}
+
+function _saveNamedStarLocal(id, name) {
   try {
     const saved = JSON.parse(localStorage.getItem('abyss_named_stars') || '{}');
-    saved[discoveryStar.id] = name;
+    saved[id] = name;
     localStorage.setItem('abyss_named_stars', JSON.stringify(saved));
   } catch (e) {}
-
-  setStatus(`⭐ '${name}' 별이 우주에 등록되었습니다`);
-  exitStarDiscovery();
 }
 
 function skipStarNaming() {
